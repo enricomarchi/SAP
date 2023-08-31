@@ -163,18 +163,11 @@ class WebSAP:
 
         # Legge i dati
         df = pd.DataFrame(columns=colonne)
-        riga = 2
-        finefoglio = False
-        while not finefoglio:
-            cellaVDT = self.ws.cell(row=riga, column=colonne.index("VDT"))
-            finefoglio = (cellaVDT.value == None or cellaVDT.value == "")
-            if not finefoglio:
-                for colonna in range(len(colonne)):
-                    df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
-            riga += 1
+        for riga in range(2, self.ws.max_row + 1):
+            for colonna in range(len(colonne)):
+                df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
+        return df    
 
-        return df
-        
     def sal(
             self,
             oda: str,
