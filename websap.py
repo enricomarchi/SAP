@@ -147,7 +147,7 @@ class WebSAP:
                     
 
     def leggi_excel(self, file_excel: str, nome_foglio: str = ""):
-        self.wb = openpyxl.load_workbook("SAL.xlsx")
+        self.wb = openpyxl.load_workbook(file_excel)
         self.ws = self.wb.active if nome_foglio == "" else self.wb[nome_foglio]      
 
         # Legge l'header nella riga 1
@@ -168,19 +168,7 @@ class WebSAP:
                 df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
         return df    
 
-    def sal(
-            self,
-            oda: str,
-            file_excel: str,
-    ):
-        """
-        Inserisce una nuova SAL in WebSAL, copiando le voci di tariffa dal file Excel specificato.
-        :param oda: ODA della SAL da inserire
-        :param file_excel: il file Excel da cui prendere voci di tariffa e quantità
-        :param versione_vdt: Opzionale, indica quale anno di tariffa applicare, in caso siano inserite più versioni in contratto catalogo.
-            Indice a base 1, rispecchia l'ordine con cui compaiono in elenco in web sal quando si deve inserire una nuova VDT.
-        :return: None
-        """
+    def sal(self, oda: str, file_excel: str):
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -381,20 +369,10 @@ class WebSAP:
         
         return riga
             
-    def perizia(
-            self,
-            network: str,
-            file_excel: str
-    ):
-        """
-        Inserisce una nuova Perizia in Web Perizie, copiando le voci di tariffa dal file Excel specificato.
-        :param network: Network della perizia da inserire
-        :param file_excel: il file Excel da cui prendere voci di tariffa e quantità
-        :return: None
-        """
+    def perizia(self, network: str, file_excel: str, nome_foglio: str):
         # Entra in Web Perizie
         time.sleep(1)
-        self.click('//div[@title="Perizie"]')       # Tasto SAL
+        self.click('//div[@title="Perizie"]')       # Tasto perizie
         time.sleep(1)
         self.click('//td[@ut="3"][@cc="3"]/a')      # Tasto freccia Specialista
         self.attesa_caricamento()
@@ -403,9 +381,10 @@ class WebSAP:
         self.attesa_caricamento()
         self.testo(network, '//span[text()="NUMERO DI NETWORK"]/../../../following-sibling::td//input')  # Network
 
-        df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df = self.leggi_excel(file_excel=file_excel, nome_foglio=nome_foglio) #df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
+        df.Descrizione = df.Descrizione.fillna("")
         df = df[df["Quantità"] != 0]
         df.Inserita = df.Inserita.fillna("")
         df.Prezzo = df.Prezzo.fillna(0)
@@ -443,28 +422,22 @@ class WebSAP:
                             self.__inserisci_vdt_perizia(index, row)
                             df.at[index, "Inserita"] = "x"
                             self.ws.cell(row=index, column=df.columns.get_loc("Inserita")+1).value = "x"
-                            self.wb.save(file_excel)
-                            df.to_excel(excel_writer=file_excel, sheet_name="VDT", index=False)
                         except InvalidSelectorException as e:
                             pass
+                        finally:
+                            self.wb.save(file_excel)
+                            
                 self.click('//span[text()="SALVA"]/../..')              # SALVA
                 self.click('//span[text()="ALTRA GESTIONE"]/../..')     # Altra gestione
                 self.wb.close()
                 
-    def __inserisci_vdt_perizia(
-            self,
-            index, 
-            row
-    ):
-        """
-        Inserisce una VDT in Web Perizie.
-        in ques'ultimo caso va specificato anche UM e prezzo unitario.
-        """
-        
+    def __inserisci_vdt_perizia(self, index, row):
         vdt = row.VDT
         q = row.Quantità
         prezzo=row.Prezzo
         vdt_standard = row.TipoVDT == "ANAGRAFICA"
+        descrizione = row.Descrizione
+        UM = row.UM
         
         # Verifica se la VDT è già stata inserita
         time.sleep(1)
@@ -484,7 +457,7 @@ class WebSAP:
             else:
                 self.click('//div[text()="NON CODIFICATE"]')
                 self.testo(vdt, '//div[@class="urPWContent"]//span[text()="DESCRIZIONE"]/../../../../../../../../../../tr[2]/td[3]//input')  # campo Descrizione
-                self.testo(vdt, '//div[@class="urPWContent"]//span[text()="DESCRIZIONE"]/../../../../../../../../../../tr[2]/td[4]//input')  # campo UM
+                self.testo(UM, '//div[@class="urPWContent"]//span[text()="DESCRIZIONE"]/../../../../../../../../../../tr[2]/td[4]//input')  # campo UM
             time.sleep(1)
             self.click('//span[text()="INSERISCI"]/../..')  # inserisci
         time.sleep(1)
@@ -492,7 +465,7 @@ class WebSAP:
             self.click(f'//input[@value="{vdt}"]/../../../td[8]/a')  # Gestione misurazioni
         else:
             # se è una VDT non codificata inserisce anche l'importo unitario
-            self.testo(str(prezzo), '//span[text()="PROVA"]/../../../../../../../../../../../../../../../../../../tr[2]//span[text()="Prezzo Lordo :"]/../../../td[4]//input')   # campo Prezzo
+            self.testo(str(prezzo), f'//span[text()="{vdt}"]/../../../../../../../../../../../../../../../../../../tr[2]//span[text()="Prezzo Lordo :"]/../../../td[4]//input')   # campo Prezzo
             time.sleep(1)
             self.click(f'//span[text()="{vdt}"]/../../../td[8]/a')  # Gestione misurazioni
 
