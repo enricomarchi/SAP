@@ -240,6 +240,7 @@ class WebSAP:
         nuova_voce = row.NV
         ed_tariffa = row.Ed_Tariffa
 
+        print(vdt)
         lista = self.lista_elementi(f'//span[text()="{vdt}"]')  # Verifica se la VDT è già stata inserita
         descrizione_vdt = vdt
         time.sleep(1)
@@ -442,6 +443,7 @@ class WebSAP:
         UM = row.UM
         
         # Verifica se la VDT è già stata inserita
+        print(vdt)
         time.sleep(1)
         if vdt_standard:
             lista = self.lista_elementi(f'//input[@value="{vdt}"]')
@@ -455,6 +457,7 @@ class WebSAP:
             if vdt_standard:
                 self.testo(vdt, '//div[@class="urPWContent"]//span[text()="Voce di Tariffa"]/../../../td[5]//input')  # campo VDT
                 self.click('//span[text()="VISUALIZZA"]/../..')  # visualizza
+                time.sleep(1)
                 self.click(f'//span[text()="{vdt}"]/../../../td')  # checkbox prima voce
             else:
                 self.click('//div[text()="NON CODIFICATE"]')
