@@ -1,3 +1,4 @@
+from xml.etree.ElementTree import Element
 from selenium import webdriver
 from selenium.webdriver import chrome
 from selenium.webdriver.common.keys import Keys
@@ -394,7 +395,8 @@ class WebSAP:
             df_operazione = df[df["Operazione"] == op]
             parti_opera = df_operazione.PO.unique()
             for po in parti_opera:
-                self.testo(str(po), '//span[starts-with(text(), "PARTE")]/../../../following-sibling::td//input')   # Parte d'opera
+                elem = self.testo(str(po), '//span[starts-with(text(), "PARTE")]/../../../following-sibling::td//input')   # Parte d'opera
+                elem.send_keys(Keys.RETURN)
                 df_parte_opera = df_operazione[df_operazione["PO"] == po]
                 self.click('//span[text()="GESTIONE RISORSE"]/../..')
                 self.attesa_caricamento()
