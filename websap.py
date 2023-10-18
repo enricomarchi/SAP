@@ -396,7 +396,7 @@ class WebSAP:
             for po in parti_opera:
                 self.testo(str(po), '//span[starts-with(text(), "PARTE")]/../../../following-sibling::td//input')   # Parte d'opera
                 df_parte_opera = df_operazione[df_operazione["PO"] == po]
-                self.click('//div[@title="Procedi con la Painificazione della Risorsa"]')
+                self.click('//span[text()="GESTIONE RISORSE"]/../..')
                 self.attesa_caricamento()
 
                 # Se compare un messaggio che un altro utente sta modificando questa VPR, seleziona di elaborare questa VPR
