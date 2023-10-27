@@ -384,6 +384,7 @@ class WebSAP:
         self.testo(network, '//span[text()="NUMERO DI NETWORK"]/../../../following-sibling::td//input')  # Network
 
         df = self.leggi_excel(file_excel=file_excel, nome_foglio=nome_foglio) #df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
         df.Descrizione = df.Descrizione.fillna("")
@@ -397,8 +398,8 @@ class WebSAP:
             parti_opera = df_operazione.PO.unique()
             for po in parti_opera:
                 elem = self.testo(str(po), '//span[starts-with(text(), "PARTE")]/../../../following-sibling::td//input')   # Parte d'opera
-                elem.send_keys(Keys.RETURN)
                 df_parte_opera = df_operazione[df_operazione["PO"] == po]
+                elem.send_keys(Keys.RETURN)
                 self.click('//span[text()="GESTIONE RISORSE"]/../..')
                 self.attesa_caricamento()
 
