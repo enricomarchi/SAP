@@ -182,6 +182,7 @@ class WebSAP:
         self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
         df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
         df.NV = df.NV.fillna("")
