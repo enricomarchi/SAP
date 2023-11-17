@@ -255,7 +255,7 @@ class WebSAP:
                 elem = self.elemento('//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # cancella il campo descrizione
                 elem.clear()
             else:
-                self.testo(vdt, '//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # campo Descrizione
+                self.testo(f'*{vdt}*', '//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # campo Descrizione
                 elem = self.elemento('//div[@class="urPWContent"]//span[text()="VdT"]/../../../../td[2]//input')  # cancella il campo VDT
                 elem.clear()
             time.sleep(1)
