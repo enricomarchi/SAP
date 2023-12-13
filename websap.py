@@ -20,7 +20,7 @@ class Ex_VDT_non_trovata(Exception):
 
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
-    DEF_timeout: float = 60
+    DEF_timeout: float = 600
 
     def __init__(
             self,
@@ -81,7 +81,6 @@ class WebSAP:
                 pass
 
         #elem = WebDriverWait(self.driver, self.timeout, 1).until(lambda x: x.find_element(By.XPATH, xpath))
-        raise TimeoutException
 
     def lista_elementi(
             self,
