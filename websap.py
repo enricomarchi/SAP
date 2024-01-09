@@ -1,4 +1,3 @@
-from xml.etree.ElementTree import Element
 from selenium import webdriver
 from selenium.webdriver import chrome
 from selenium.webdriver.common.keys import Keys
