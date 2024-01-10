@@ -181,6 +181,7 @@ class WebSAP:
 
         df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
         df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
+        df = df.dropna(axis=0, subset=['Quantità'])
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
         df.NV = df.NV.fillna("")
@@ -217,7 +218,8 @@ class WebSAP:
                             df.at[index, "Inserita"] = "x"
                             self.ws.cell(row=index, column=df.columns.get_loc("Inserita")+1).value = "x"
                         except InvalidSelectorException as e:
-                            pass
+                            print(str(e))
+                            input('Premere INVIO per proseguire')
                         except Ex_VDT_non_trovata as e:
                             df.at[index, "Inserita"] = "manca"
                             self.ws.cell(row=index, column=df.columns.get_loc("Inserita")+1).value = "manca"
