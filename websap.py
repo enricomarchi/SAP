@@ -3,19 +3,99 @@ from selenium.webdriver import chrome
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
-from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import InvalidSelectorException
 import pandas as pd
 import time
 import openpyxl
-import numpy as np
+import xlwings as xw
+from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCHAR#, Integer,  MetaData, Table
+
+dtype_mapping_sal_misure = {
+    'aq': VARCHAR(10),
+    'ca': VARCHAR(10),
+    'n_sal': SmallInteger(),
+    'oda': VARCHAR(10),
+    'posizione': VARCHAR(4),
+    'po': SmallInteger(),
+    'descrizione_po': VARCHAR(50),
+    'descrizione': VARCHAR(50),
+    'vdt': VARCHAR(20),
+    'quantità': Float(),
+    'nv': VARCHAR(5),
+    'prezzo': Float(),
+    'rib': VARCHAR(2),
+    'data': DateTime(),  
+    'edizione_tariffa': VARCHAR(10),
+    'inserita': VARCHAR(50)
+}
 
 class Ex_VDT_non_trovata(Exception):
     def __init__(self, vdt, messaggio):
         super().__init__(messaggio)
         self.vdt = vdt
+
+def colonna_da_nome(ws, nome):
+      col_ref = ws.range(nome).address
+
+      # Estrai la lettera della colonna dal riferimento alla cella
+      col_letter = ''.join(c for c in col_ref if c.isalpha())
+
+      # Converti la lettera della colonna nel numero corrispondente
+      col_num = 0
+      for char in col_letter:
+            col_num = col_num * 26 + (ord(char.upper()) - ord('A')) + 1
+
+      return col_num
+
+def leggi_riepilogo(nome_file):
+      app = xw.App(visible=False)
+      wb = app.books.open(nome_file)
+      ws = wb.sheets['Riepilogo']
+      aq = ws.range('aq').value
+      ca = ws.range('ca').value
+      n_sal = ws.range('n_sal').value
+      oda = ws.range('oda').value
+      wb.close()
+      app.quit()
+      return aq, ca, n_sal, oda
+
+def connetti_db():
+    username = 'enricoma_user'
+    password = '932197Silvestr_'
+    hostname = '185.2.168.125'
+    database_name = 'enricoma_lavoro'
+    engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
+    return engine
+
+def elimina_sal(aq, ca, n_sal):
+    engine = connetti_db()
+    conn = engine.connect()
+    query = text("DELETE FROM sal_misure WHERE aq = :aq AND ca = :ca AND n_sal = :n_sal")
+    parametri = {'aq': aq, 'ca': ca, 'n_sal': n_sal}
+    try:
+        conn.execute(query, parametri)
+        conn.commit()
+        conn.close()
+        engine.dispose()
+    except Exception as e:
+        print(f"Errore durante l'eliminazione: {e}")
+
+def salva_sal(aq, ca, n_sal, oda, nome_file):
+    engine = connetti_db()
+    elimina_sal(aq, ca, n_sal)
+    df = pd.read_excel(nome_file, sheet_name='VDT')
+    df.columns = df.columns.str.lower()
+    df.insert(0, 'aq', aq)
+    df.insert(1, 'ca', ca)
+    df.insert(2, 'n_sal', n_sal)
+    df.insert(3, 'oda', oda)
+    df['posizione'] = df['posizione'].astype(str)
+    df['data'] = pd.to_datetime(df['data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
+    df.to_sql('sal_misure', con=engine, if_exists='append', index=False, dtype=dtype_mapping_sal_misure, method='multi')
+    engine.dispose()      
+   
 
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
@@ -38,8 +118,13 @@ class WebSAP:
         self.timeout = WebSAP.DEF_timeout
         self.wb = None
         self.ws = None
-        self.df_tariffe = pd.read_parquet("Tariffe.parquet")
-        self.df_macep = pd.read_parquet("Macep.parquet")
+        
+        engine = connetti_db()
+        query = text("SELECT * FROM tariffe")
+        self.df_tariffe = pd.read_sql_query(query, con=engine)
+        query = text("SELECT * FROM macep")
+        self.df_macep = pd.read_sql_query(query, con=engine)
+        engine.dispose()
         self.logon()
 
     def logon(
@@ -167,7 +252,8 @@ class WebSAP:
                 df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
         return df    
 
-    def sal(self, oda: str, file_excel: str):
+    def sal(self, file_excel: str):
+        aq, ca, n_sal, oda = leggi_riepilogo(file_excel)
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -177,6 +263,7 @@ class WebSAP:
         self.click('//span[text()="OK"]/../..')     # OK al popup
         self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
         self.attesa_caricamento()
+        
         self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
         df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
@@ -231,6 +318,9 @@ class WebSAP:
                 self.click('//span[text()="Salva"]/../..')              # SALVA
                 self.click('//span[text()="Altra gestione"]/../..')     # Altra gestione                
                 self.wb.close()
+        elimina_sal(aq, ca, n_sal, oda)
+        salva_sal(aq, ca, n_sal, oda, file_excel)
+    
 
     def __inserisci_vdt_sal(self, index, row):
         vdt = row.VDT
