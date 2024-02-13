@@ -121,8 +121,10 @@ class WebSAP:
         
         engine = connetti_db()
         query = text("SELECT * FROM tariffe")
+        print('Lettura da DB tabella tariffe')
         self.df_tariffe = pd.read_sql_query(query, con=engine)
         query = text("SELECT * FROM macep")
+        print('Lettura da DB tabella macep')
         self.df_macep = pd.read_sql_query(query, con=engine)
         engine.dispose()
         self.logon()
