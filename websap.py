@@ -163,8 +163,9 @@ class WebSAP:
                 elem = self.driver.find_element(By.XPATH, xpath)
                 time.sleep(1)
                 return elem
-            except NoSuchElementException:
-                pass
+            except NoSuchElementException as e:
+                print(str(e))
+                time.sleep(1)
 
         #elem = WebDriverWait(self.driver, self.timeout, 1).until(lambda x: x.find_element(By.XPATH, xpath))
 
@@ -182,8 +183,8 @@ class WebSAP:
             try:
                 lista = self.driver.find_elements(By.XPATH, xpath)
                 return lista
-            except NoSuchElementException:
-                print(f"NoSuchElementException, xpath:{xpath}, def lista_elementi, riga 89")
+            except NoSuchElementException as e:
+                print(str(e))
                 time.sleep(1)
 
         return lista
@@ -209,8 +210,12 @@ class WebSAP:
         :return: WebElement
         """
         elem = self.elemento(xpath)
-        elem.click()
-        time.sleep(1)
+        try:
+            elem.click()
+            time.sleep(1)
+        except Exception as e:
+            print(str(e))
+            time.sleep(1)
         return elem
 
     def testo(
@@ -224,13 +229,30 @@ class WebSAP:
         :param xpath: xpath dell'elemento
         :return: WebElement
         """
-        elem = self.click(xpath)
-        elem.clear()
-        time.sleep(1)
-        elem.send_keys(txt)
-        time.sleep(1)
+        try:
+            elem = self.click(xpath)
+            elem.clear()
+            time.sleep(1)
+            elem.send_keys(txt)
+            time.sleep(1)
+        except Exception as e:
+            print(str(e))
+            time.sleep(1)
         return elem
                     
+    def cerca_tariffa(self, vdt):
+        engine = connetti_db()
+        query = text("SELECT * FROM tariffe WHERE vdt = :vdt")
+        parametri = {'vdt': vdt}
+        df_tariffe = pd.read_sql_query(query, con=engine, params=parametri)
+        return df_tariffe
+        
+    def cerca_macep(self, vdt):
+        engine = connetti_db()
+        query = text("SELECT * FROM macep WHERE vdt = :vdt")
+        parametri = {'vdt': vdt}
+        df_macep = pd.read_sql_query(query, con=engine, params=parametri)
+        return df_macep
 
     def leggi_excel(self, file_excel: str, nome_foglio: str = ""):
         self.wb = openpyxl.load_workbook(file_excel)
@@ -269,13 +291,14 @@ class WebSAP:
         self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
         df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-        df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
+        
         df = df.dropna(axis=0, subset=['Quantità'])
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
         df.NV = df.NV.fillna("")
         df.Descrizione = df.Descrizione.fillna("")
         df.Inserita = df.Inserita.fillna("")
+        df = df[(df["Inserita"] == "")]
         posizioni = df.loc[df["Inserita"] == "", "Posizione"].unique()
         tot_vdt = len(df.loc[df["Inserita"] == "", "VDT"])
         i_vdt = 1
@@ -301,7 +324,7 @@ class WebSAP:
                 for index, row in df_parte_opera.iterrows():
                     if row.Inserita == "":
                         try:
-                            print(f"\rVDT n.{i_vdt} di {tot_vdt}", end=" ", flush=True)
+                            print(f"VDT n.{i_vdt} di {tot_vdt}, VDT = {row.VDT}, Q = {row.Quantità}, Descrizione = {row.Descrizione}")
                             self.__inserisci_vdt_sal(index, row)
                             time.sleep(1)
                             df.at[index, "Inserita"] = "x"
@@ -331,10 +354,13 @@ class WebSAP:
         ribasso = row.Rib
         descrizione = row.Descrizione
         nuova_voce = row.NV
-        ed_tariffa = row.Ed_Tariffa
+        ed_tariffa = row.Edizione_Tariffa
 
-        print(vdt)
-        lista = self.lista_elementi(f'//span[text()="{vdt}"]')  # Verifica se la VDT è già stata inserita
+        # Verifica se la VDT è già stata inserita
+        if nuova_voce:
+            lista = self.lista_elementi(f'//td[4]//span[contains(text(), "{vdt}")]')
+        else:
+            lista = self.lista_elementi(f'//td[3]//span[text()="{vdt}"]')  
         descrizione_vdt = vdt
         time.sleep(1)
         if len(lista) == 0:                                 # Se non è stata già inserita la inserisce
@@ -381,7 +407,10 @@ class WebSAP:
             self.click('//span[text()="Inserisci"]/../..')      # inserisci
 
         time.sleep(1)
-        self.click(f'//span[text()="{descrizione_vdt}"]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
+        if nuova_voce:
+            self.click(f'//td[4]//span[contains(text(), "{vdt}")]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
+        else:   
+            self.click(f'//td[3]//span[text()="{vdt}"]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
 
         time.sleep(1)
         tabella_misure = '//span[text()="+/-"]/../../../../..'  # xpath della tabella misure
@@ -430,7 +459,10 @@ class WebSAP:
         self.click('//span[text()="Torna alla SAL"]/../..')     # Torna alla sal
         if ribasso == "NO":
             time.sleep(2)
-            self.click(f'//span[text()="{vdt}"]/../../../../../../../../../../../../..//span[text()="No"]/..')
+            if nuova_voce:
+                self.click(f'//td[4]//span[contains(text(), "{vdt}")]/../../../../../../../../../../../../..//span[text()="No"]/..')
+            else:    
+                self.click(f'//td[3]//span[text()="{vdt}"]/../../../../../../../../../../../../..//span[text()="No"]/..')
             time.sleep(2)
             self.click('//span[text() = "Aggiorna"] /../..')
             self.attesa_caricamento()
@@ -443,11 +475,11 @@ class WebSAP:
             raise Ex_VDT_non_trovata(vdt, f"La VDT {vdt} edizione {ed_tariffa} non è presente in web sal.")
         if nuova_voce == "MaCeP":
             vdt = vdt.replace("*", "")
-            prezzo_da_trovare = self.df_macep.query("Codice_Materiale == @vdt")[ed_tariffa].iloc[0]
+            prezzo_da_trovare = self.df_macep.query("codice_materiale == @vdt")[ed_tariffa].iloc[0]
         elif nuova_voce == "x":
             return 1
         else:
-            prezzo_da_trovare = self.df_tariffe.query("Numero_S_VdT == @vdt")[ed_tariffa].iloc[0]
+            prezzo_da_trovare = self.df_tariffe.query("numero_s_vdt == @vdt")[ed_tariffa].iloc[0]
         trovata = False
         for riga in range(1, tot_righe + 1):
             time.sleep(1)
