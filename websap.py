@@ -10,13 +10,33 @@ import pandas as pd
 import time
 import openpyxl
 import xlwings as xw
-from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCHAR#, Integer,  MetaData, Table
+from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCHAR, Column
+from sqlalchemy.ext.declarative import declarative_base
 
+Base = declarative_base()
+
+class sal_misure(Base):
+    __tablename__ = 'sal_misure'  # Sostituisci con il nome effettivo della tabella
+
+    id_sal = Column(VARCHAR(14), primary_key=True)
+    n_riga = Column(SmallInteger)
+    posizione = Column(VARCHAR(4))
+    po = Column(SmallInteger)
+    descrizione_po = Column(VARCHAR(50))
+    descrizione = Column(VARCHAR(50))
+    vdt = Column(VARCHAR(20))
+    quantità = Column(Float())
+    nv = Column(VARCHAR(5))
+    prezzo = Column(Float())
+    rib = Column(VARCHAR(2))
+    data = Column(DateTime())
+    edizione_tariffa = Column(VARCHAR(10))
+    inserita = Column(VARCHAR(50))
+    note = Column(VARCHAR(200))
+    
 dtype_mapping_sal_misure = {
-    'aq': VARCHAR(10),
-    'ca': VARCHAR(10),
-    'n_sal': SmallInteger(),
-    'oda': VARCHAR(10),
+    'id_sal': VARCHAR(14),
+    'n_riga': SmallInteger(),
     'posizione': VARCHAR(4),
     'po': SmallInteger(),
     'descrizione_po': VARCHAR(50),
@@ -28,7 +48,8 @@ dtype_mapping_sal_misure = {
     'rib': VARCHAR(2),
     'data': DateTime(),  
     'edizione_tariffa': VARCHAR(10),
-    'inserita': VARCHAR(50)
+    'inserita': VARCHAR(50),
+    'note': VARCHAR(200)
 }
 
 class Ex_VDT_non_trovata(Exception):
@@ -53,18 +74,6 @@ def colonna_da_nome(ws, nome):
 
       return col_num
 
-def leggi_riepilogo(nome_file):
-      app = xw.App(visible=False)
-      wb = app.books.open(nome_file)
-      ws = wb.sheets['Riepilogo']
-      aq = ws.range('aq').value
-      ca = ws.range('ca').value
-      n_sal = ws.range('n_sal').value
-      oda = ws.range('oda').value
-      wb.close()
-      app.quit()
-      return aq, ca, n_sal, oda
-
 def connetti_db():
     username = 'enricoma_user'
     password = '932197Silvestr_'
@@ -73,11 +82,11 @@ def connetti_db():
     engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
     return engine
 
-def elimina_sal(aq, ca, oda, n_sal):
+def elimina_sal(id_sal):
     engine = connetti_db()
     conn = engine.connect()
-    query = text("DELETE FROM sal_misure WHERE aq = :aq AND ca = :ca AND oda = :oda AND n_sal = :n_sal")
-    parametri = {'aq': aq, 'ca': ca, 'oda': oda , 'n_sal': n_sal}
+    query = text("DELETE FROM sal_misure WHERE id_sal = :id_sal")
+    parametri = {'id_sal': id_sal}
     try:
         conn.execute(query, parametri)
         conn.commit()
@@ -86,14 +95,9 @@ def elimina_sal(aq, ca, oda, n_sal):
     except Exception as e:
         print(f"Errore durante l'eliminazione: {e}")
 
-def salva_sal(aq, ca, oda, n_sal, nome_file):
+def salva_sal(df):
     engine = connetti_db()
-    df = pd.read_excel(nome_file, sheet_name='VDT')
-    df.columns = df.columns.str.lower()
-    df.insert(0, 'aq', aq)
-    df.insert(1, 'ca', ca)
-    df.insert(2, 'oda', oda)
-    df.insert(3, 'n_sal', n_sal)  
+    df.columns = df.columns.str.lower() 
     df['posizione'] = df['posizione'].astype(str)
     df['data'] = pd.to_datetime(df['data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
     df.to_sql('sal_misure', con=engine, if_exists='append', index=False, dtype=dtype_mapping_sal_misure, method='multi')
@@ -122,8 +126,6 @@ class WebSAP:
         self.timeout = WebSAP.DEF_timeout
         self.wb = None
         self.ws = None
-        
-        self.logon()
 
     def logon(
             self
@@ -273,8 +275,14 @@ class WebSAP:
                 df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
         return df    
 
+    def test(self, file_excel="SAL.xlsx"):
+        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df.insert(1, 'n_riga', df.reset_index().index + 1)
+        id_sal = df['ID_SAL'].iloc[0]
+        elimina_sal(id_sal)
+        salva_sal(df)
+
     def sal(self, file_excel: str):
-        aq, ca, n_sal, oda = leggi_riepilogo(file_excel)
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -284,11 +292,15 @@ class WebSAP:
         self.click('//span[text()="OK"]/../..')     # OK al popup
         self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
         self.attesa_caricamento()
-        
+
+        #df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") 
+        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df.insert(1, 'n_riga', df.reset_index().index + 1)
+        id_sal = df['ID_SAL'].iloc[0]
+        oda = id_sal.split("-")[0]
+                
         self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
-        df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") #pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-        
         df = df.dropna(axis=0, subset=['Quantità'])
         df.VDT = df.VDT.str.upper()
         df.VDT = df.VDT.fillna("")
@@ -341,8 +353,8 @@ class WebSAP:
                 self.click('//span[text()="Salva"]/../..')              # SALVA
                 self.click('//span[text()="Altra gestione"]/../..')     # Altra gestione                
                 self.wb.close()
-        elimina_sal(aq, ca, oda, n_sal)
-        salva_sal(aq, ca, oda, n_sal, file_excel)
+        elimina_sal(id_sal)
+        salva_sal(df)
     
 
     def __inserisci_vdt_sal(self, index, row):
