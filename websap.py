@@ -36,6 +36,10 @@ class Ex_VDT_non_trovata(Exception):
         super().__init__(messaggio)
         self.vdt = vdt
 
+class Ex_xpath_vuoto(Exception):
+    def __init__(self, messaggio):
+        super().__init__(messaggio)
+
 def colonna_da_nome(ws, nome):
       col_ref = ws.range(nome).address
 
@@ -69,11 +73,11 @@ def connetti_db():
     engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
     return engine
 
-def elimina_sal(aq, ca, n_sal):
+def elimina_sal(aq, ca, oda, n_sal):
     engine = connetti_db()
     conn = engine.connect()
-    query = text("DELETE FROM sal_misure WHERE aq = :aq AND ca = :ca AND n_sal = :n_sal")
-    parametri = {'aq': aq, 'ca': ca, 'n_sal': n_sal}
+    query = text("DELETE FROM sal_misure WHERE aq = :aq AND ca = :ca AND oda = :oda AND n_sal = :n_sal")
+    parametri = {'aq': aq, 'ca': ca, 'oda': oda , 'n_sal': n_sal}
     try:
         conn.execute(query, parametri)
         conn.commit()
@@ -82,20 +86,20 @@ def elimina_sal(aq, ca, n_sal):
     except Exception as e:
         print(f"Errore durante l'eliminazione: {e}")
 
-def salva_sal(aq, ca, n_sal, oda, nome_file):
+def salva_sal(aq, ca, oda, n_sal, nome_file):
     engine = connetti_db()
-    elimina_sal(aq, ca, n_sal)
     df = pd.read_excel(nome_file, sheet_name='VDT')
     df.columns = df.columns.str.lower()
     df.insert(0, 'aq', aq)
     df.insert(1, 'ca', ca)
-    df.insert(2, 'n_sal', n_sal)
-    df.insert(3, 'oda', oda)
+    df.insert(2, 'oda', oda)
+    df.insert(3, 'n_sal', n_sal)  
     df['posizione'] = df['posizione'].astype(str)
     df['data'] = pd.to_datetime(df['data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
     df.to_sql('sal_misure', con=engine, if_exists='append', index=False, dtype=dtype_mapping_sal_misure, method='multi')
     engine.dispose()      
-   
+
+TIMEOUT = 120 
 
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
@@ -119,14 +123,6 @@ class WebSAP:
         self.wb = None
         self.ws = None
         
-        engine = connetti_db()
-        query = text("SELECT * FROM tariffe")
-        print('Lettura da DB tabella tariffe')
-        self.df_tariffe = pd.read_sql_query(query, con=engine)
-        query = text("SELECT * FROM macep")
-        print('Lettura da DB tabella macep')
-        self.df_macep = pd.read_sql_query(query, con=engine)
-        engine.dispose()
         self.logon()
 
     def logon(
@@ -158,13 +154,13 @@ class WebSAP:
         :param xpath: xpath dell'elemento desiderato
         :return: WebElement
         """
-        for i in range(1, int(self.timeout)):
+        for i in range(1, TIMEOUT):
             try:
                 elem = self.driver.find_element(By.XPATH, xpath)
-                time.sleep(1)
                 return elem
-            except NoSuchElementException as e:
-                print(str(e))
+            except Exception as e:
+                #print(str(e))
+                print(f'\rProc. elemento: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
 
         #elem = WebDriverWait(self.driver, self.timeout, 1).until(lambda x: x.find_element(By.XPATH, xpath))
@@ -179,12 +175,13 @@ class WebSAP:
         :return: WebElement
         """
         lista = []
-        for i in range(1, int(self.timeout)):
+        for i in range(1, TIMEOUT):
             try:
                 lista = self.driver.find_elements(By.XPATH, xpath)
                 return lista
             except NoSuchElementException as e:
-                print(str(e))
+                #print(str(e))
+                print(f'\rProc. lista_elementi: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
 
         return lista
@@ -209,14 +206,18 @@ class WebSAP:
         :param xpath: xpath dell'elemento da cliccare
         :return: WebElement
         """
-        elem = self.elemento(xpath)
-        try:
-            elem.click()
-            time.sleep(1)
-        except Exception as e:
-            print(str(e))
-            time.sleep(1)
-        return elem
+        if xpath:
+            for i in range(1, TIMEOUT):
+                try:
+                    elem = self.driver.find_element(By.XPATH, xpath)
+                    elem.click()
+                    return elem        
+                except Exception as e:
+                    #print(str(e))
+                    print(f'\rProc. click: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
+                    time.sleep(1)
+        else:
+            raise Ex_xpath_vuoto('Nessun xpath fornito')
 
     def testo(
             self,
@@ -229,27 +230,23 @@ class WebSAP:
         :param xpath: xpath dell'elemento
         :return: WebElement
         """
-        try:
-            elem = self.click(xpath)
-            elem.clear()
-            time.sleep(1)
-            elem.send_keys(txt)
-            time.sleep(1)
-        except Exception as e:
-            print(str(e))
-            time.sleep(1)
+        elem = self.click(xpath)
+        elem.clear()
+        time.sleep(1)
+        elem.send_keys(txt)
+        time.sleep(1)
         return elem
                     
     def cerca_tariffa(self, vdt):
         engine = connetti_db()
-        query = text("SELECT * FROM tariffe WHERE vdt = :vdt")
+        query = text("SELECT * FROM tariffe WHERE numero_s_vdt = :vdt")
         parametri = {'vdt': vdt}
         df_tariffe = pd.read_sql_query(query, con=engine, params=parametri)
         return df_tariffe
         
     def cerca_macep(self, vdt):
         engine = connetti_db()
-        query = text("SELECT * FROM macep WHERE vdt = :vdt")
+        query = text("SELECT * FROM macep WHERE codice_materiale = :vdt")
         parametri = {'vdt': vdt}
         df_macep = pd.read_sql_query(query, con=engine, params=parametri)
         return df_macep
@@ -324,7 +321,8 @@ class WebSAP:
                 for index, row in df_parte_opera.iterrows():
                     if row.Inserita == "":
                         try:
-                            print(f"VDT n.{i_vdt} di {tot_vdt}, VDT = {row.VDT}, Q = {row.Quantità}, Descrizione = {row.Descrizione}")
+                            print(f"\nVDT n.{i_vdt} di {tot_vdt}, VDT = {row.VDT}, Q = {row.Quantità}, Descrizione = {row.Descrizione}", end=" ", flush=True)
+                            self.attesa_caricamento()
                             self.__inserisci_vdt_sal(index, row)
                             time.sleep(1)
                             df.at[index, "Inserita"] = "x"
@@ -343,8 +341,8 @@ class WebSAP:
                 self.click('//span[text()="Salva"]/../..')              # SALVA
                 self.click('//span[text()="Altra gestione"]/../..')     # Altra gestione                
                 self.wb.close()
-        elimina_sal(aq, ca, n_sal, oda)
-        salva_sal(aq, ca, n_sal, oda, file_excel)
+        elimina_sal(aq, ca, oda, n_sal)
+        salva_sal(aq, ca, oda, n_sal, file_excel)
     
 
     def __inserisci_vdt_sal(self, index, row):
@@ -357,6 +355,7 @@ class WebSAP:
         ed_tariffa = row.Edizione_Tariffa
 
         # Verifica se la VDT è già stata inserita
+        time.sleep(1)
         if nuova_voce:
             lista = self.lista_elementi(f'//td[4]//span[contains(text(), "{vdt}")]')
         else:
@@ -379,7 +378,7 @@ class WebSAP:
             time.sleep(1)
             self.click('//span[text()="Visualizza"]/../..')     # visualizza
 
-    # ============================================ SELEZIONE EDIZIONE TARIFFA =========================================
+            # ============================================ SELEZIONE EDIZIONE TARIFFA =========================================
             try:
                 time.sleep(1)
                 versione_vdt = self.trova_versione_vdt(vdt, ed_tariffa, nuova_voce)
@@ -402,7 +401,7 @@ class WebSAP:
             if nuova_voce != "":
                 descrizione_vdt = elem.text
             time.sleep(1)
-    # =================================================================================================================
+            # =================================================================================================================
     
             self.click('//span[text()="Inserisci"]/../..')      # inserisci
 
@@ -456,7 +455,13 @@ class WebSAP:
             self.testo(descrizione, '//textarea')
             self.click('//span[text()="Salva"]/../..')  # Salva
         time.sleep(1)
-        self.click('//span[text()="Torna alla SAL"]/../..')     # Torna alla sal
+        errore = 1
+        while errore == 1:
+            try:
+                self.click('//span[text()="Torna alla SAL"]/../..')     # Torna alla sal
+                errore = 0
+            except Ex_xpath_vuoto as e:
+                errore = 1
         if ribasso == "NO":
             time.sleep(2)
             if nuova_voce:
@@ -475,11 +480,11 @@ class WebSAP:
             raise Ex_VDT_non_trovata(vdt, f"La VDT {vdt} edizione {ed_tariffa} non è presente in web sal.")
         if nuova_voce == "MaCeP":
             vdt = vdt.replace("*", "")
-            prezzo_da_trovare = self.df_macep.query("codice_materiale == @vdt")[ed_tariffa].iloc[0]
+            prezzo_da_trovare = self.cerca_macep(vdt).iloc[0][ed_tariffa]
         elif nuova_voce == "x":
             return 1
         else:
-            prezzo_da_trovare = self.df_tariffe.query("numero_s_vdt == @vdt")[ed_tariffa].iloc[0]
+            prezzo_da_trovare = self.cerca_tariffa(vdt).iloc[0][ed_tariffa]
         trovata = False
         for riga in range(1, tot_righe + 1):
             time.sleep(1)
