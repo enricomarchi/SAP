@@ -12,28 +12,34 @@ import openpyxl
 import xlwings as xw
 from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCHAR, Column
 from sqlalchemy.ext.declarative import declarative_base
+import pymysql
 
-Base = declarative_base()
+TIMEOUT = 120 
+hostname = '185.2.168.125'
+username = 'enricoma_user'
+password = '932197Silvestr_'
+database_name = 'enricoma_lavoro'
 
-class sal_misure(Base):
-    __tablename__ = 'sal_misure'  # Sostituisci con il nome effettivo della tabella
+def test(df):
+    connection = connessione_mysql()
+    indice_colonne = list(df.index.names)
+    tutte_le_colonne = indice_colonne + list(df.columns)
+    placeholders = ', '.join(['%s'] * len(tutte_le_colonne))
+    colonne_sql = ', '.join(tutte_le_colonne)
+    query = f"INSERT INTO sal_misure ({colonne_sql}) VALUES ({placeholders})"
 
-    id_sal = Column(VARCHAR(14), primary_key=True)
-    n_riga = Column(SmallInteger)
-    posizione = Column(VARCHAR(4))
-    po = Column(SmallInteger)
-    descrizione_po = Column(VARCHAR(50))
-    descrizione = Column(VARCHAR(50))
-    vdt = Column(VARCHAR(20))
-    quantità = Column(Float())
-    nv = Column(VARCHAR(5))
-    prezzo = Column(Float())
-    rib = Column(VARCHAR(2))
-    data = Column(DateTime())
-    edizione_tariffa = Column(VARCHAR(10))
-    inserita = Column(VARCHAR(50))
-    note = Column(VARCHAR(200))
-    
+    try:
+        with connection.cursor() as cursor:
+            for row in df.itertuples():  # Include l'indice
+                # Costruisci una tupla dei valori da inserire, includendo i valori dell'indice
+                dati = tuple(row.Index) + row[1:]  # 'row.Index' è una tupla contenente i valori dell'indice
+                cursor.execute(query, dati)
+        connection.commit()
+    except Exception as e:
+        print(f"Errore durante l'inserimento dei dati: {e}")
+    finally:
+        connection.close()
+
 dtype_mapping_sal_misure = {
     'id_sal': VARCHAR(14),
     'n_riga': SmallInteger(),
@@ -74,36 +80,62 @@ def colonna_da_nome(ws, nome):
 
       return col_num
 
-def connetti_db():
-    username = 'enricoma_user'
-    password = '932197Silvestr_'
-    hostname = '185.2.168.125'
-    database_name = 'enricoma_lavoro'
+def connessione_mysql():
+    return pymysql.connect(host=hostname, user=username, password=password, db=database_name)
+
+def engine_sqlalchemy():
     engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
     return engine
 
 def elimina_sal(id_sal):
-    engine = connetti_db()
-    conn = engine.connect()
-    query = text("DELETE FROM sal_misure WHERE id_sal = :id_sal")
-    parametri = {'id_sal': id_sal}
-    try:
-        conn.execute(query, parametri)
-        conn.commit()
-        conn.close()
-        engine.dispose()
-    except Exception as e:
-        print(f"Errore durante l'eliminazione: {e}")
+    execute_query("DELETE FROM sal_misure WHERE id_sal = %s", args=(id_sal,)) 
 
 def salva_sal(df):
-    engine = connetti_db()
+    engine = engine_sqlalchemy()
     df.columns = df.columns.str.lower() 
-    df['posizione'] = df['posizione'].astype(str)
-    df['data'] = pd.to_datetime(df['data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-    df.to_sql('sal_misure', con=engine, if_exists='append', index=False, dtype=dtype_mapping_sal_misure, method='multi')
+    df.to_sql('sal_misure', con=engine, if_exists='append', index=True)
     engine.dispose()      
 
-TIMEOUT = 120 
+def aggiorna_riga_sal(index, row):
+    sql = 'UPDATE sal_misure SET posizione=%s, po=%s, descrizione_po=%s, descrizione=%s, vdt=%s, quantità=%s, nv=%s, prezzo=%s, rib=%s, data=%s, edizione_tariffa=%s, inserita=%s, note=%s WHERE id_sal=%s AND n_riga=%s'
+    args = (row.posizione, row.po, row.descrizione_po, row.descrizione, row.vdt, row.quantità, row.nv, row.prezzo, row.rib, row.data, row.edizione_tariffa, row.inserita, row.note, index[0], index[1])
+    execute_query(sql, args)
+    
+def read_stored_proc(nome, args):
+    conn = connessione_mysql()
+    try:
+        with conn.cursor() as cursor:
+            cursor.callproc(nome, args=args)
+            result = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+            df = pd.DataFrame(result, columns=columns)
+            return df
+    finally:
+        conn.close()    
+
+def read_query(sql, args):
+    conn = connessione_mysql()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, args)
+            result = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+            df = pd.DataFrame(result, columns=columns)            
+            return df
+    finally:
+        conn.close()    
+
+def execute_query(sql, args):
+    conn = connessione_mysql()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, args)
+        conn.commit()
+    except Exception as e:  
+        print(f"Errore durante l'esecuzione della query: {e}")
+        conn.rollback()  
+    finally:
+        conn.close()    
 
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
@@ -240,49 +272,29 @@ class WebSAP:
         return elem
                     
     def cerca_tariffa(self, vdt):
-        engine = connetti_db()
+        engine = engine_sqlalchemy()
         query = text("SELECT * FROM tariffe WHERE numero_s_vdt = :vdt")
         parametri = {'vdt': vdt}
         df_tariffe = pd.read_sql_query(query, con=engine, params=parametri)
         return df_tariffe
         
     def cerca_macep(self, vdt):
-        engine = connetti_db()
+        engine = engine_sqlalchemy()
         query = text("SELECT * FROM macep WHERE codice_materiale = :vdt")
         parametri = {'vdt': vdt}
         df_macep = pd.read_sql_query(query, con=engine, params=parametri)
         return df_macep
 
-    def leggi_excel(self, file_excel: str, nome_foglio: str = ""):
-        self.wb = openpyxl.load_workbook(file_excel)
-        self.ws = self.wb.active if nome_foglio == "" else self.wb[nome_foglio]      
-
-        # Legge l'header nella riga 1
-        colonna = 1
-        finecolonne = False
-        colonne = []
-        while not finecolonne:
-            cella = self.ws.cell(row=1, column=colonna)
-            finecolonne = (cella.value == None or cella.value == "")
-            if not finecolonne:
-                colonne.append(cella.value)
-            colonna += 1
-
-        # Legge i dati
-        df = pd.DataFrame(columns=colonne)
-        for riga in range(2, self.ws.max_row + 1):
-            for colonna in range(len(colonne)):
-                df.loc[riga, colonne[colonna]] = self.ws.cell(row=riga, column=colonna+1).value
-        return df    
-
-    def test(self, file_excel="SAL.xlsx"):
+    def importa_sal_da_excel(self, file_excel):
         df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
         df.insert(1, 'n_riga', df.reset_index().index + 1)
         id_sal = df['ID_SAL'].iloc[0]
+        df['Data'] = pd.to_datetime(df['Data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
+        df.set_index(['ID_SAL', 'n_riga'], inplace=True)
         elimina_sal(id_sal)
         salva_sal(df)
-
-    def sal(self, file_excel: str):
+        
+    def sal(self, id_sal):
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -293,78 +305,71 @@ class WebSAP:
         self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
         self.attesa_caricamento()
 
-        #df = self.leggi_excel(file_excel=file_excel, nome_foglio="VDT") 
-        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-        df.insert(1, 'n_riga', df.reset_index().index + 1)
-        id_sal = df['ID_SAL'].iloc[0]
-        oda = id_sal.split("-")[0]
-                
-        self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
+        df = read_stored_proc('vdt_da_inserire', (id_sal,))
+        if len(df)>0:
+            df.set_index(['id_sal', 'n_riga'], inplace=True)
+            oda = id_sal.split("-")[0]
+                    
+            self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
-        df = df.dropna(axis=0, subset=['Quantità'])
-        df.VDT = df.VDT.str.upper()
-        df.VDT = df.VDT.fillna("")
-        df.NV = df.NV.fillna("")
-        df.Descrizione = df.Descrizione.fillna("")
-        df.Inserita = df.Inserita.fillna("")
-        df = df[(df["Inserita"] == "")]
-        posizioni = df.loc[df["Inserita"] == "", "Posizione"].unique()
-        tot_vdt = len(df.loc[df["Inserita"] == "", "VDT"])
-        i_vdt = 1
-        for pos in posizioni:
-            self.testo(str(pos), '//span[text()="Posizione Numero"]/../../../following-sibling::td//input')  # Posizione
-            df_posizione = df.loc[df["Posizione"] == pos, :]
-            parti_opera = df_posizione.loc[df_posizione["Inserita"] == "", "PO"].unique()
-            for po in parti_opera:
-                self.testo(str(po), '//span[contains(text(), "Opera")]/../../../following-sibling::td//input')   # Parte d'opera
-                df_parte_opera = df_posizione.loc[df_posizione["PO"] == po, :]
-                self.click('//div[@title="Vai alla Gestione delle Voci di Tariffa"]')
-                self.attesa_caricamento()
-
-                # Se compare una richiesta di modificare la versione in elaborazione clicca e prosegui
-                time.sleep(1)
-                lista = self.lista_elementi('//span[text()="Ultima versione IN ELABORAZIONE"]/..')
-                if len(lista) > 0:
-                    lista[0].click()  # Checkbox "ultima versione in elaborazione"
-                    self.click('//span[text()="OK"]/../..')  # Tasto OK
+            df = df.dropna(axis=0, subset=['quantità'])
+            df.vdt = df.vdt.str.upper()
+            df.vdt = df.vdt.fillna("")
+            df.nv = df.nv.fillna("")
+            df.descrizione = df.descrizione.fillna("")
+            df.inserita = df.inserita.fillna("")
+            df = df[(df["inserita"] == "")]
+            posizioni = df.loc[df["inserita"] == "", "posizione"].unique()
+            tot_vdt = len(df.loc[df["inserita"] == "", "vdt"])
+            i_vdt = 1
+            for pos in posizioni:
+                self.testo(str(pos), '//span[text()="Posizione Numero"]/../../../following-sibling::td//input')  # Posizione
+                df_posizione = df.loc[df["posizione"] == pos, :]
+                parti_opera = df_posizione.loc[df_posizione["inserita"] == "", "po"].unique()
+                for po in parti_opera:
+                    self.testo(str(po), '//span[contains(text(), "Opera")]/../../../following-sibling::td//input')   # Parte d'opera
+                    df_parte_opera = df_posizione.loc[df_posizione["po"] == po, :]
+                    self.click('//div[@title="Vai alla Gestione delle Voci di Tariffa"]')
                     self.attesa_caricamento()
 
-                time.sleep(1)
-                for index, row in df_parte_opera.iterrows():
-                    if row.Inserita == "":
-                        try:
-                            print(f"\nVDT n.{i_vdt} di {tot_vdt}, VDT = {row.VDT}, Q = {row.Quantità}, Descrizione = {row.Descrizione}", end=" ", flush=True)
-                            self.attesa_caricamento()
-                            self.__inserisci_vdt_sal(index, row)
-                            time.sleep(1)
-                            df.at[index, "Inserita"] = "x"
-                            self.ws.cell(row=index, column=df.columns.get_loc("Inserita")+1).value = "x"
-                        except InvalidSelectorException as e:
-                            print(str(e))
-                            input('Premere INVIO per proseguire')
-                        except Ex_VDT_non_trovata as e:
-                            df.at[index, "Inserita"] = "manca"
-                            self.ws.cell(row=index, column=df.columns.get_loc("Inserita")+1).value = "manca"
-                            print(str(e))
-                        finally:
-                            self.wb.save(file_excel)
-                            i_vdt += 1
+                    # Se compare una richiesta di modificare la versione in elaborazione clicca e prosegui
+                    time.sleep(1)
+                    lista = self.lista_elementi('//span[text()="Ultima versione IN ELABORAZIONE"]/..')
+                    if len(lista) > 0:
+                        lista[0].click()  # Checkbox "ultima versione in elaborazione"
+                        self.click('//span[text()="OK"]/../..')  # Tasto OK
+                        self.attesa_caricamento()
 
-                self.click('//span[text()="Salva"]/../..')              # SALVA
-                self.click('//span[text()="Altra gestione"]/../..')     # Altra gestione                
-                self.wb.close()
-        elimina_sal(id_sal)
-        salva_sal(df)
-    
+                    time.sleep(1)
+                    for index, row in df_parte_opera.iterrows():
+                        if row.inserita == "":
+                            try:
+                                print(f"VDT n.{i_vdt} di {tot_vdt}, VDT = {row.vdt}, Q = {row.quantità}, Descrizione = {row.descrizione}")
+                                self.attesa_caricamento()
+                                self.__inserisci_vdt_sal(index, row)
+                                time.sleep(1)
+                                row["inserita"] = "x"
+                                aggiorna_riga_sal(index, row)
+                            except Ex_VDT_non_trovata as e:
+                                row["inserita"] = "manca"
+                                aggiorna_riga_sal(index, row)
+                                print(str(e))
+                            finally:
+                                i_vdt += 1
+
+                    self.click('//span[text()="Salva"]/../..')              # SALVA
+                    self.click('//span[text()="Altra gestione"]/../..')     # Altra gestione    
+        else:
+            print(f'SAL {id_sal} non trovata nel database, oppure tutte le voci sono già state inserite')               
 
     def __inserisci_vdt_sal(self, index, row):
-        vdt = row.VDT
-        q = row.Quantità
-        data = row.Data
-        ribasso = row.Rib
-        descrizione = row.Descrizione
-        nuova_voce = row.NV
-        ed_tariffa = row.Edizione_Tariffa
+        vdt = row.vdt
+        q = row.quantità
+        data = row.data.strftime('%d.%m.%Y')
+        ribasso = row.rib
+        descrizione = row.descrizione
+        nuova_voce = row.nv
+        ed_tariffa = row.edizione_tariffa
 
         # Verifica se la VDT è già stata inserita
         time.sleep(1)
@@ -525,13 +530,13 @@ class WebSAP:
         self.attesa_caricamento()
         self.testo(network, '//span[text()="NUMERO DI NETWORK"]/../../../following-sibling::td//input')  # Network
 
-        df = self.leggi_excel(file_excel=file_excel, nome_foglio=nome_foglio) #df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
         df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
-        df.VDT = df.VDT.str.upper()
-        df.VDT = df.VDT.fillna("")
-        df.Descrizione = df.Descrizione.fillna("")
+        df.vdt = df.vdt.str.upper()
+        df.vdt = df.vdt.fillna("")
+        df.descrizione = df.descrizione.fillna("")
         df = df[df["Quantità"] != 0]
-        df.Inserita = df.Inserita.fillna("")
+        df.inserita = df.inserita.fillna("")
         df.Prezzo = df.Prezzo.fillna(0)
         operazioni = df.Operazione.unique()
         for op in operazioni:
