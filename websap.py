@@ -497,11 +497,11 @@ class WebSAP:
             raise Ex_VDT_non_trovata(vdt, f"La VDT {vdt} edizione {ed_tariffa} non è presente in web sal.")
         if nuova_voce == "MaCeP":
             vdt = vdt.replace("*", "")
-            prezzo_da_trovare = self.cerca_macep(vdt).iloc[0][ed_tariffa]
+            prezzo_da_trovare = round(self.cerca_macep(vdt).iloc[0][ed_tariffa], 2)
         elif nuova_voce == "x":
             return 1
         else:
-            prezzo_da_trovare = self.cerca_tariffa(vdt).iloc[0][ed_tariffa]
+            prezzo_da_trovare = round(self.cerca_tariffa(vdt).iloc[0][ed_tariffa], 2)
         trovata = False
         for riga in range(1, tot_righe + 1):
             time.sleep(1)
