@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCH
 from sqlalchemy.ext.declarative import declarative_base
 import pymysql
 
-TIMEOUT = 120 
+TIMEOUT = 240 
 hostname = '185.2.168.125'
 username = 'enricoma_user'
 password = '932197Silvestr_'
@@ -113,6 +113,18 @@ def read_stored_proc(nome, args):
     finally:
         conn.close()    
 
+def execute_stored_proc(nome, args):
+    conn = connessione_mysql()
+    try:
+        with conn.cursor() as cursor:
+            cursor.callproc(nome, args=args)
+            conn.commit() 
+    except Exception as e:
+        print(f"Si è verificato un errore: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
 def read_query(sql, args):
     conn = connessione_mysql()
     try:
@@ -130,12 +142,21 @@ def execute_query(sql, args):
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, args)
-        conn.commit()
+            conn.commit()
     except Exception as e:  
         print(f"Errore durante l'esecuzione della query: {e}")
         conn.rollback()  
     finally:
         conn.close()    
+
+def importa_sal_da_excel(file_excel):
+    df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+    df.insert(1, 'n_riga', df.reset_index().index + 1)
+    id_sal = df['id_sal'].iloc[0]
+    df['data_misura'] = pd.to_datetime(df['data_misura'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
+    df.set_index(['id_sal', 'n_riga'], inplace=True)
+    elimina_sal(id_sal)
+    salva_sal(df)
 
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
@@ -196,7 +217,7 @@ class WebSAP:
                 #print(str(e))
                 print(f'\rProc. elemento: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
-
+        print('', end='\n')
         #elem = WebDriverWait(self.driver, self.timeout, 1).until(lambda x: x.find_element(By.XPATH, xpath))
 
     def lista_elementi(
@@ -217,7 +238,7 @@ class WebSAP:
                 #print(str(e))
                 print(f'\rProc. lista_elementi: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
-
+        print('', end='\n')
         return lista
 
     def attesa_caricamento(
@@ -252,7 +273,8 @@ class WebSAP:
                     time.sleep(1)
         else:
             raise Ex_xpath_vuoto('Nessun xpath fornito')
-
+        print('', end='\n')
+        
     def testo(
             self,
             txt: str,
@@ -271,30 +293,7 @@ class WebSAP:
         time.sleep(1)
         return elem
                     
-    def cerca_tariffa(self, vdt):
-        engine = engine_sqlalchemy()
-        query = text("SELECT * FROM tariffe WHERE numero_s_vdt = :vdt")
-        parametri = {'vdt': vdt}
-        df_tariffe = pd.read_sql_query(query, con=engine, params=parametri)
-        return df_tariffe
-        
-    def cerca_macep(self, vdt):
-        engine = engine_sqlalchemy()
-        query = text("SELECT * FROM macep WHERE codice_materiale = :vdt")
-        parametri = {'vdt': vdt}
-        df_macep = pd.read_sql_query(query, con=engine, params=parametri)
-        return df_macep
-
-    def importa_sal_da_excel(self, file_excel):
-        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-        df.insert(1, 'n_riga', df.reset_index().index + 1)
-        id_sal = df['ID_SAL'].iloc[0]
-        df['Data'] = pd.to_datetime(df['Data'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-        df.set_index(['ID_SAL', 'n_riga'], inplace=True)
-        elimina_sal(id_sal)
-        salva_sal(df)
-        
-    def sal(self, id_sal):
+    def sal(self, id_sal, riepilogo_vdt=1):
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -305,10 +304,14 @@ class WebSAP:
         self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
         self.attesa_caricamento()
 
-        df = read_stored_proc('vdt_da_inserire', (id_sal,))
+        df = read_stored_proc('vdt_da_inserire', (id_sal, riepilogo_vdt))
         if len(df)>0:
-            df.set_index(['id_sal', 'n_riga'], inplace=True)
-            oda = id_sal.split("-")[0]
+            if riepilogo_vdt == 0:
+                df.set_index(['id_sal', 'n_riga'], inplace=True)
+            else:
+                df.set_index(['id_sal'], inplace=True)
+                df['descrizione'] = ''
+            oda = df['oda'].iloc[0]
                     
             self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
@@ -318,14 +321,13 @@ class WebSAP:
             df.nv = df.nv.fillna("")
             df.descrizione = df.descrizione.fillna("")
             df.inserita = df.inserita.fillna("")
-            df = df[(df["inserita"] == "")]
-            posizioni = df.loc[df["inserita"] == "", "posizione"].unique()
-            tot_vdt = len(df.loc[df["inserita"] == "", "vdt"])
+            posizioni = df["posizione"].unique()
+            tot_vdt = len(df)
             i_vdt = 1
             for pos in posizioni:
                 self.testo(str(pos), '//span[text()="Posizione Numero"]/../../../following-sibling::td//input')  # Posizione
                 df_posizione = df.loc[df["posizione"] == pos, :]
-                parti_opera = df_posizione.loc[df_posizione["inserita"] == "", "po"].unique()
+                parti_opera = df_posizione["po"].unique()
                 for po in parti_opera:
                     self.testo(str(po), '//span[contains(text(), "Opera")]/../../../following-sibling::td//input')   # Parte d'opera
                     df_parte_opera = df_posizione.loc[df_posizione["po"] == po, :]
@@ -342,17 +344,19 @@ class WebSAP:
 
                     time.sleep(1)
                     for index, row in df_parte_opera.iterrows():
+                        if riepilogo_vdt == 0:
+                            n_riga = row.n_riga
+                        else:
+                            n_riga = 0
                         if row.inserita == "":
                             try:
                                 print(f"VDT n.{i_vdt} di {tot_vdt}, VDT = {row.vdt}, Q = {row.quantità}, Descrizione = {row.descrizione}")
                                 self.attesa_caricamento()
                                 self.__inserisci_vdt_sal(index, row)
                                 time.sleep(1)
-                                row["inserita"] = "x"
-                                aggiorna_riga_sal(index, row)
+                                execute_stored_proc('modifica_vdt_inserita_in_sal', (id_sal, row.vdt, n_riga, 'x'))
                             except Ex_VDT_non_trovata as e:
-                                row["inserita"] = "manca"
-                                aggiorna_riga_sal(index, row)
+                                execute_stored_proc('modifica_vdt_inserita_in_sal', (id_sal, row.vdt, n_riga, 'manca'))
                                 print(str(e))
                             finally:
                                 i_vdt += 1
@@ -365,7 +369,7 @@ class WebSAP:
     def __inserisci_vdt_sal(self, index, row):
         vdt = row.vdt
         q = row.quantità
-        data = row.data.strftime('%d.%m.%Y')
+        data = row.data_misura.strftime('%d.%m.%Y')
         ribasso = row.rib
         descrizione = row.descrizione
         nuova_voce = row.nv
@@ -377,7 +381,7 @@ class WebSAP:
             lista = self.lista_elementi(f'//td[4]//span[contains(text(), "{vdt}")]')
         else:
             lista = self.lista_elementi(f'//td[3]//span[text()="{vdt}"]')  
-        descrizione_vdt = vdt
+
         time.sleep(1)
         if len(lista) == 0:                                 # Se non è stata già inserita la inserisce
             self.click('//div[@title="Seleziona una nuova Voce di Tariffa"]')
@@ -398,7 +402,7 @@ class WebSAP:
             # ============================================ SELEZIONE EDIZIONE TARIFFA =========================================
             try:
                 time.sleep(1)
-                versione_vdt = self.trova_versione_vdt(vdt, ed_tariffa, nuova_voce)
+                versione_vdt = self.trova_versione_vdt(index, row)
             except Ex_VDT_non_trovata:
                 time.sleep(1)
                 self.click('//span[text()="Chiudi"]/../..')
@@ -415,8 +419,7 @@ class WebSAP:
             else:  # in caso contrario preme la prima della lista, che dovrebbe essere l'unica dell'elenco
                 self.click(f'//span[text()="Visualizza"]/../../../../../../../../../../../tr[2]//td//td//tr[2]//tr[@rr="1"]/td')
                 elem = self.elemento(f'//span[text()="Visualizza"]/../../../../../../../../../../../tr[2]//td//td//tr[2]//tr[@rr="1"]/td[3]/span/span')
-            if nuova_voce != "":
-                descrizione_vdt = elem.text
+
             time.sleep(1)
             # =================================================================================================================
     
@@ -490,18 +493,18 @@ class WebSAP:
             self.attesa_caricamento()
             time.sleep(2)
 
-    def trova_versione_vdt(self, vdt, ed_tariffa, nuova_voce):
+    def trova_versione_vdt(self, index, row):
+        nuova_voce = row.nv
+        vdt = row.vdt
+        ed_tariffa = row.edizione_tariffa
         tot_righe_elem = self.lista_elementi('//span[text()="Visualizza"]/../../../../../../../../../../../tr[2]//td//td//tr[2]//tr/td/table/tbody/tr')
         tot_righe = len(tot_righe_elem) - 1 # -1 perché una riga è l'header 
         if tot_righe == 0:
             raise Ex_VDT_non_trovata(vdt, f"La VDT {vdt} edizione {ed_tariffa} non è presente in web sal.")
-        if nuova_voce == "MaCeP":
-            vdt = vdt.replace("*", "")
-            prezzo_da_trovare = round(self.cerca_macep(vdt).iloc[0][ed_tariffa], 2)
         elif nuova_voce == "x":
             return 1
         else:
-            prezzo_da_trovare = round(self.cerca_tariffa(vdt).iloc[0][ed_tariffa], 2)
+            prezzo_da_trovare = round(row.prezzo_unitario, 2)
         trovata = False
         for riga in range(1, tot_righe + 1):
             time.sleep(1)
