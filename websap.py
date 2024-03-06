@@ -152,10 +152,8 @@ def execute_query(sql, args):
 def importa_sal_da_excel(file_excel):
     df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
     df.insert(1, 'n_riga', df.reset_index().index + 1)
-    id_sal = df['id_sal'].iloc[0]
     df['data_misura'] = pd.to_datetime(df['data_misura'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
     df.set_index(['id_sal', 'n_riga'], inplace=True)
-    elimina_sal(id_sal)
     salva_sal(df)
 
 class WebSAP:
@@ -344,8 +342,9 @@ class WebSAP:
 
                     time.sleep(1)
                     for index, row in df_parte_opera.iterrows():
+                        print(index)
                         if riepilogo_vdt == 0:
-                            n_riga = row.n_riga
+                            n_riga = index[1]
                         else:
                             n_riga = 0
                         if row.inserita == "":
