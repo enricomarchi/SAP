@@ -149,9 +149,16 @@ def execute_query(sql, args):
     finally:
         conn.close()    
 
-def importa_sal_da_excel(file_excel):
+def importa_sal_da_excel(file_excel, append=True):
     df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-    df.insert(1, 'n_riga', df.reset_index().index + 1)
+    id_sal = df['id_sal'].iloc[0]
+    if append:
+        temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM sal_misure WHERE id_sal=%s GROUP BY id_sal", args=(id_sal,))
+        inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
+    else:
+        elimina_sal(id_sal)
+        inizia_da_riga = 1
+    df.insert(1, 'n_riga', df.reset_index().index + inizia_da_riga)
     df['data_misura'] = pd.to_datetime(df['data_misura'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
     df.set_index(['id_sal', 'n_riga'], inplace=True)
     salva_sal(df)
@@ -350,6 +357,7 @@ class WebSAP:
                         if row.inserita == "":
                             try:
                                 print(f"VDT n.{i_vdt} di {tot_vdt}, VDT = {row.vdt}, Q = {row.quantità}, Descrizione = {row.descrizione}")
+                                time.sleep(5)
                                 self.attesa_caricamento()
                                 self.__inserisci_vdt_sal(index, row)
                                 time.sleep(1)
