@@ -222,7 +222,7 @@ class WebSAP:
                 #print(str(e))
                 print(f'\rProc. elemento: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
-        print('', end='\n')
+        print('\n', end='\n')
         #elem = WebDriverWait(self.driver, self.timeout, 1).until(lambda x: x.find_element(By.XPATH, xpath))
 
     def lista_elementi(
@@ -243,7 +243,7 @@ class WebSAP:
                 #print(str(e))
                 print(f'\rProc. lista_elementi: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
                 time.sleep(1)
-        print('', end='\n')
+        print('\n', end='\n')
         return lista
 
     def attesa_caricamento(
@@ -278,7 +278,7 @@ class WebSAP:
                     time.sleep(1)
         else:
             raise Ex_xpath_vuoto('Nessun xpath fornito')
-        print('', end='\n')
+        print('\n', end='\n')
         
     def testo(
             self,
@@ -291,12 +291,23 @@ class WebSAP:
         :param xpath: xpath dell'elemento
         :return: WebElement
         """
-        elem = self.click(xpath)
-        elem.clear()
-        time.sleep(1)
-        elem.send_keys(txt)
-        time.sleep(1)
-        return elem
+        if xpath:
+            for i in range(1, TIMEOUT):
+                try:
+                    elem = self.click(xpath)
+                    time.sleep(1)
+                    elem.clear()
+                    time.sleep(1)
+                    elem.send_keys(txt)
+                    time.sleep(1)
+                    return elem
+                except Exception as e:
+                    #print(str(e))
+                    print(f'\rProc. click: xpath = {xpath}, Tentavivo n.{i} di {TIMEOUT}', end=' ', flush=True)
+                    time.sleep(1)
+        else:
+            raise Ex_xpath_vuoto('Nessun xpath fornito')
+        print('\n', end='\n')
                     
     def sal(self, id_sal, riepilogo_vdt=1):
         # Entra in WebSAL
@@ -317,7 +328,8 @@ class WebSAP:
                 df.set_index(['id_sal'], inplace=True)
                 df['descrizione'] = ''
             oda = df['oda'].iloc[0]
-                    
+            
+            time.sleep(1)       
             self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
             df = df.dropna(axis=0, subset=['quantità'])
@@ -349,7 +361,6 @@ class WebSAP:
 
                     time.sleep(1)
                     for index, row in df_parte_opera.iterrows():
-                        print(index)
                         if riepilogo_vdt == 0:
                             n_riga = index[1]
                         else:
