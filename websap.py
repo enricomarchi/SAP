@@ -309,7 +309,8 @@ class WebSAP:
             raise Ex_xpath_vuoto('Nessun xpath fornito')
         print('\n', end='\n')
                     
-    def sal(self, id_sal, riepilogo_vdt=1):
+    def sal(self, id_sal, riepilogo_vdt=1, rielaborazione=0):
+        oda = id_sal[:10]
         # Entra in WebSAL
         time.sleep(1)
         self.click('//div[@title="SAL"]')           # Tasto SAL
@@ -317,7 +318,11 @@ class WebSAP:
         self.click('//td[@ut="3"][@cc="3"]/a')      # Tasto freccia Assistente
         time.sleep(1)
         self.click('//span[text()="OK"]/../..')     # OK al popup
-        self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
+        if rielaborazione == 0:
+            self.click('//div[text()="GESTIONE"]')      # Scheda GESTIONE
+        else:
+            self.click('//div[text()="RIELABORAZIONE"]') # Scheda RIELABORAZIONE
+            
         self.attesa_caricamento()
 
         df = read_stored_proc('vdt_da_inserire', (id_sal, riepilogo_vdt))
@@ -327,7 +332,6 @@ class WebSAP:
             else:
                 df.set_index(['id_sal'], inplace=True)
                 df['descrizione'] = ''
-            oda = df['oda'].iloc[0]
             
             time.sleep(1)       
             self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
@@ -348,7 +352,10 @@ class WebSAP:
                 for po in parti_opera:
                     self.testo(str(po), '//span[contains(text(), "Opera")]/../../../following-sibling::td//input')   # Parte d'opera
                     df_parte_opera = df_posizione.loc[df_posizione["po"] == po, :]
-                    self.click('//div[@title="Vai alla Gestione delle Voci di Tariffa"]')
+                    if rielaborazione == 0:
+                        self.click('//div[@title="Vai alla Gestione delle Voci di Tariffa"]')  # Gestione misurazioni
+                    else:
+                        self.click('//div[@title="Procedi con la gestione delle Misurazioni in Rielaborazione"]')  # Gestione misurazioni in RIELAB.
                     self.attesa_caricamento()
 
                     # Se compare una richiesta di modificare la versione in elaborazione clicca e prosegui
@@ -396,9 +403,9 @@ class WebSAP:
         # Verifica se la VDT è già stata inserita
         time.sleep(1)
         if nuova_voce:
-            lista = self.lista_elementi(f'//td[4]//span[contains(text(), "{vdt}")]')
+            lista = self.lista_elementi(f'//span[contains(translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "{vdt}")]')
         else:
-            lista = self.lista_elementi(f'//td[3]//span[text()="{vdt}"]')  
+            lista = self.lista_elementi(f'//td[3]//span[translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")="{vdt}"]')  
 
         time.sleep(1)
         if len(lista) == 0:                                 # Se non è stata già inserita la inserisce
@@ -406,13 +413,13 @@ class WebSAP:
             time.sleep(1)
             self.click('//div[text()="Contr.Catalogo"]')
             time.sleep(1)
-            if nuova_voce == "":
-                self.testo(vdt, '//div[@class="urPWContent"]//span[text()="VdT"]/../../../../td[2]//input')  # campo VDT
-                elem = self.elemento('//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # cancella il campo descrizione
-                elem.clear()
-            else:
+            if nuova_voce:
                 self.testo(f'*{vdt}*', '//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # campo Descrizione
                 elem = self.elemento('//div[@class="urPWContent"]//span[text()="VdT"]/../../../../td[2]//input')  # cancella il campo VDT
+                elem.clear()
+            else:
+                self.testo(vdt, '//div[@class="urPWContent"]//span[text()="VdT"]/../../../../td[2]//input')  # campo VDT
+                elem = self.elemento('//div[@class="urPWContent"]//span[text()="Descrizione"]/../../../../td[4]//input')  # cancella il campo descrizione
                 elem.clear()
             time.sleep(1)
             self.click('//span[text()="Visualizza"]/../..')     # visualizza
@@ -445,9 +452,9 @@ class WebSAP:
 
         time.sleep(1)
         if nuova_voce:
-            self.click(f'//td[4]//span[contains(text(), "{vdt}")]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
+            self.click(f'//td[4]//span[contains(translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "{vdt}")]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
         else:   
-            self.click(f'//td[3]//span[text()="{vdt}"]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
+            self.click(f'//td[3]//span[translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")="{vdt}"]/../../../../../../../../../../../../td[2]//span[text()="Gestione Misurazioni"]/../..')  # Gestione misurazioni
 
         time.sleep(1)
         tabella_misure = '//span[text()="+/-"]/../../../../..'  # xpath della tabella misure
@@ -503,9 +510,9 @@ class WebSAP:
         if ribasso == "NO":
             time.sleep(2)
             if nuova_voce:
-                self.click(f'//td[4]//span[contains(text(), "{vdt}")]/../../../../../../../../../../../../..//span[text()="No"]/..')
+                self.click(f'//td[4]//span[contains(translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "{vdt}")]/../../../../../../../../../../../../..//span[text()="No"]/..')
             else:    
-                self.click(f'//td[3]//span[text()="{vdt}"]/../../../../../../../../../../../../..//span[text()="No"]/..')
+                self.click(f'//td[3]//span[translate(text(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")="{vdt}"]/../../../../../../../../../../../../..//span[text()="No"]/..')
             time.sleep(2)
             self.click('//span[text() = "Aggiorna"] /../..')
             self.attesa_caricamento()
