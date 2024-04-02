@@ -43,19 +43,24 @@ def test(df):
 dtype_mapping_sal_misure = {
     'id_sal': VARCHAR(14),
     'n_riga': SmallInteger(),
+    'oda': VARCHAR(10),
+    'n_sal': SmallInteger(),
     'posizione': VARCHAR(4),
     'po': SmallInteger(),
-    'descrizione_po': VARCHAR(50),
-    'descrizione': VARCHAR(50),
+    'descrizione': VARCHAR(255),
     'vdt': VARCHAR(20),
     'quantità': Float(),
     'nv': VARCHAR(5),
-    'prezzo': Float(),
+    'prezzo_nv': Float(),
+    'um_nv': VARCHAR(5),
     'rib': VARCHAR(2),
-    'data': DateTime(),  
+    'data_misura': DateTime(),  
     'edizione_tariffa': VARCHAR(10),
     'inserita': VARCHAR(50),
-    'note': VARCHAR(200)
+    'note': VARCHAR(200),
+    'edizione_tariffa_adeguamento': VARCHAR(10),
+    'sovrapprezzo1': VARCHAR(20),
+    'sovrapprezzo2': VARCHAR(20)
 }
 
 class Ex_VDT_non_trovata(Exception):
@@ -97,8 +102,8 @@ def salva_sal(df):
     engine.dispose()      
 
 def aggiorna_riga_sal(index, row):
-    sql = 'UPDATE sal_misure SET posizione=%s, po=%s, descrizione_po=%s, descrizione=%s, vdt=%s, quantità=%s, nv=%s, prezzo=%s, rib=%s, data=%s, edizione_tariffa=%s, inserita=%s, note=%s WHERE id_sal=%s AND n_riga=%s'
-    args = (row.posizione, row.po, row.descrizione_po, row.descrizione, row.vdt, row.quantità, row.nv, row.prezzo, row.rib, row.data, row.edizione_tariffa, row.inserita, row.note, index[0], index[1])
+    sql = 'UPDATE sal_misure SET oda=%s, n_sal=%s, posizione=%s, po=%s, descrizione=%s, vdt=%s, quantità=%s, nv=%s, prezzo_nv=%s, um_nv=%s, rib=%s, data_misura=%s, edizione_tariffa=%s, inserita=%s, note=%s, edizione_tariffa_adeguamento=%s, sovrapprezzo1=%s, sovrapprezzo2=%s WHERE id_sal=%s AND n_riga=%s'
+    args = (row.oda, row.n_sal, row.posizione, row.po, row.descrizione_po, row.descrizione, row.vdt, row.quantità, row.nv, row.prezzo_nv, row.um_nv, row.rib, row.data_misura, row.edizione_tariffa, row.inserita, row.note, row.edizione_tariffa_adeguamento, row.sovrapprezzo1, row.sovrapprezzo2, index[0], index[1])
     execute_query(sql, args)
     
 def read_stored_proc(nome, args):
