@@ -1,3 +1,4 @@
+from attr import NOTHING
 from selenium import webdriver
 from selenium.webdriver import chrome
 from selenium.webdriver.common.keys import Keys
@@ -15,9 +16,9 @@ from sqlalchemy.ext.declarative import declarative_base
 import pymysql
 
 TIMEOUT = 240 
-hostname = '185.2.168.125'
-username = 'enricoma_user'
-password = '932197Silvestr_'
+hostname = 'localhost'
+username = 'root'
+password = '932197'
 database_name = 'enricoma_lavoro'
 
 def test(df):
@@ -40,28 +41,32 @@ def test(df):
     finally:
         connection.close()
 
-dtype_mapping_sal_misure = {
-    'id_sal': VARCHAR(14),
-    'n_riga': SmallInteger(),
-    'oda': VARCHAR(10),
-    'n_sal': SmallInteger(),
-    'posizione': VARCHAR(4),
-    'po': SmallInteger(),
-    'descrizione': VARCHAR(255),
-    'vdt': VARCHAR(20),
-    'quantità': Float(),
-    'nv': VARCHAR(5),
-    'prezzo_nv': Float(),
-    'um_nv': VARCHAR(5),
-    'rib': VARCHAR(2),
-    'data_misura': DateTime(),  
-    'edizione_tariffa': VARCHAR(10),
-    'inserita': VARCHAR(50),
-    'note': VARCHAR(200),
-    'edizione_tariffa_adeguamento': VARCHAR(10),
-    'sovrapprezzo1': VARCHAR(20),
-    'sovrapprezzo2': VARCHAR(20)
-}
+class mapping_perizie:
+    def __init__(self, 
+                 nome_foglio: str, 
+                 riga_inizio: int, 
+                 riga_fine:int, 
+                 col_po: str, 
+                 col_vdt:str, 
+                 col_descrizione_vdt:str, 
+                 col_quantità:str, 
+                 col_prezzo_unitario:str, 
+                 col_um:str, 
+                 col_descrizione_misura:str, 
+                 operazione=None, 
+                 parte_opera=None):
+        self.nome_foglio = nome_foglio
+        self.riga_inizio = riga_inizio
+        self.riga_fine = riga_fine
+        self.col_po = col_po
+        self.col_vdt = col_vdt
+        self.col_descrizione_vdt = col_descrizione_vdt
+        self.col_quantità = col_quantità
+        self.col_prezzo_unitario = col_prezzo_unitario
+        self.col_um = col_um
+        self.col_descrizione_misura = col_descrizione_misura
+        self.parte_opera = parte_opera
+        self.operazione = operazione
 
 class Ex_VDT_non_trovata(Exception):
     def __init__(self, vdt, messaggio):
@@ -100,6 +105,23 @@ def salva_sal(df):
     df.columns = df.columns.str.lower() 
     df.to_sql('sal_misure', con=engine, if_exists='append', index=True)
     engine.dispose()      
+
+def elimina_perizia(id_perizia):
+    execute_query(f"DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
+
+def salva_perizia(df):
+    for index, row in df.iterrows():
+        # Aggiunta degli indici alla lista dei valori
+        values_with_indices = [index[0], index[1]] + [None if pd.isna(value) else value for value in row]
+        
+        # Aggiunta degli indici alla lista dei nomi delle colonne
+        columns_with_indices = ['id_perizia', 'n_riga'] + df.columns.tolist()
+        
+        # Creazione della query di inserimento con i parametri
+        sql = f"INSERT INTO perizie_misure ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+        
+        # Esecuzione della query utilizzando la funzione execute_query
+        execute_query(sql, tuple(values_with_indices))
 
 def aggiorna_riga_sal(index, row):
     sql = 'UPDATE sal_misure SET oda=%s, n_sal=%s, posizione=%s, po=%s, descrizione=%s, vdt=%s, quantità=%s, nv=%s, prezzo_nv=%s, um_nv=%s, rib=%s, data_misura=%s, edizione_tariffa=%s, inserita=%s, note=%s, edizione_tariffa_adeguamento=%s, sovrapprezzo1=%s, sovrapprezzo2=%s WHERE id_sal=%s AND n_riga=%s'
@@ -144,6 +166,7 @@ def read_query(sql, args):
 
 def execute_query(sql, args):
     conn = connessione_mysql()
+    args = list(map(lambda x: x.replace("'", "\'") if isinstance(x, str) else x, args))
     try:
         with conn.cursor() as cursor:
             cursor.execute(sql, args)
@@ -168,6 +191,93 @@ def importa_sal_da_excel(file_excel, append=True):
     df.set_index(['id_sal', 'n_riga'], inplace=True)
     salva_sal(df)
 
+def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *mapping: mapping_perizie, append: bool = True):
+    try:
+        app = xw.App(add_book=False, visible=False)
+        wb = app.books.open(file_excel)
+        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantità', 'tipo_vdt', 'prezzo_nv', 'um_nv', 'inserita', 'sovrapprezzo1', 'sovrapprezzo2', 'foglio_excel', 'riga_excel'])
+
+        for mappa in mapping:
+            print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
+            ws = wb.sheets[mappa.nome_foglio]
+            for riga in range(mappa.riga_inizio, mappa.riga_fine+1):
+                print(f'\rRiga {riga} di {mappa.riga_fine}', end='', flush=True)
+                vdt = ws.range(f'{mappa.col_vdt}{riga}').value if mappa.col_vdt else None
+                descrizione_vdt = ws.range(f'{mappa.col_descrizione_vdt}{riga}').value if mappa.col_descrizione_vdt else None
+                quantità = ws.range(f'{mappa.col_quantità}{riga}').value if mappa.col_quantità else None
+                prezzo_unitario = ws.range(f'{mappa.col_prezzo_unitario}{riga}').value if mappa.col_prezzo_unitario else None
+                um = ws.range(f'{mappa.col_um}{riga}').value if mappa.col_um else None
+                descrizione_misura = ws.range(f'{mappa.col_descrizione_misura}{riga}').value if mappa.col_descrizione_misura else None
+                if mappa.col_po:
+                    po = ws.range(f'{mappa.col_po}{riga}').value
+                elif mappa.parte_opera:
+                    po = mappa.parte_opera
+                else:
+                    po = 'Unica'
+                
+                operazione = mappa.operazione if mappa.operazione else '10'
+                
+                riga_df = pd.Series()
+                if (vdt or descrizione_vdt or quantità):
+                    riga_df['id_perizia'] = id_perizia
+                    riga_df['operazione'] = operazione
+                    riga_df['po'] = po
+                    if descrizione_misura: 
+                        riga_df['descrizione_misura'] = descrizione_misura
+                    if vdt:
+                        riga_df['vdt'] = vdt
+                    else:
+                        riga_df['vdt'] = descrizione_vdt
+                    if descrizione_vdt:
+                        riga_df['descrizione_vdt'] = descrizione_vdt
+                    if quantità:
+                        riga_df['quantità'] = quantità
+                    if prezzo_unitario:
+                        riga_df['prezzo_nv'] = prezzo_unitario
+                    if um:
+                        riga_df['um_nv'] = um
+                    riga_df['foglio_excel'] = mappa.nome_foglio
+                    riga_df['riga_excel'] = riga
+                        
+                    df_perizia.loc[len(df_perizia)] = riga_df
+                
+        if append:
+            temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM perizie_misure WHERE id_perizia=%s GROUP BY id_perizia", args=(id_perizia,))
+            inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
+        else:
+            elimina_perizia(id_perizia)
+            inizia_da_riga = 1
+
+        df_perizia['id_perizia'] = df_perizia['id_perizia'].astype(str)
+        df_perizia['foglio_excel'] = df_perizia['foglio_excel'].astype(str)
+        df_perizia['riga_excel'] = df_perizia['riga_excel'].astype(int)
+        df_perizia['operazione'] = df_perizia['operazione'].astype(str)
+        df_perizia['po'] = df_perizia['po'].astype(str)
+        df_perizia['descrizione_misura'] = df_perizia['descrizione_misura'].astype(str)
+        df_perizia['vdt'] = df_perizia['vdt'].astype(str)
+        df_perizia['descrizione_vdt'] = df_perizia['descrizione_vdt'].astype(str)
+        df_perizia['quantità'] = df_perizia['quantità'].astype(float)
+        df_perizia['tipo_vdt'] = df_perizia['tipo_vdt'].astype(str)
+        df_perizia['prezzo_nv'] = df_perizia['prezzo_nv'].astype(float)
+        df_perizia['um_nv'] = df_perizia['um_nv'].astype(str)
+        df_perizia['inserita'] = df_perizia['inserita'].astype(str)
+        df_perizia['sovrapprezzo1'] = df_perizia['sovrapprezzo1'].astype(str)
+        df_perizia['sovrapprezzo2'] = df_perizia['sovrapprezzo2'].astype(str)
+        df_perizia.dropna(subset=['quantità'], inplace=True)
+        df_perizia = df_perizia[df_perizia['quantità'] != 0]
+        df_perizia.insert(1, 'n_riga', df_perizia.reset_index().index + inizia_da_riga)
+        df_perizia['n_riga'] = df_perizia['n_riga'].astype(int)
+        df_perizia.set_index(['id_perizia', 'n_riga'], inplace=True)
+        
+        salva_perizia(df_perizia)
+        
+        return df_perizia
+    except Exception as e:
+        print(str(e))
+    finally:
+        wb.close()
+        app.quit()
+        
 class WebSAP:
     DEF_tempo_operazione: float = 1.5
     DEF_timeout: float = 600
