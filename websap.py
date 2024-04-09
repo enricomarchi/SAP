@@ -780,7 +780,7 @@ def test_sap():
     conn = pyrfc.Connection(
         user='932197',
         passwd='.Gioia7777',
-        ashost='in00.rfi.it',
+        ashost='ine00.rfi.it',
         sysnr='02',
         client='111',
         lang='IT'  # Lingua
