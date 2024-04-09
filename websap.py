@@ -112,7 +112,7 @@ def elimina_perizia(id_perizia):
 def salva_perizia(df):
     for index, row in df.iterrows():
         # Aggiunta degli indici alla lista dei valori
-        values_with_indices = [index[0], index[1]] + [None if pd.isna(value) else value for value in row]
+        values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
         
         # Aggiunta degli indici alla lista dei nomi delle colonne
         columns_with_indices = ['id_perizia', 'n_riga'] + df.columns.tolist()
@@ -248,25 +248,9 @@ def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *map
             elimina_perizia(id_perizia)
             inizia_da_riga = 1
 
-        df_perizia['id_perizia'] = df_perizia['id_perizia'].astype(str)
-        df_perizia['foglio_excel'] = df_perizia['foglio_excel'].astype(str)
-        df_perizia['riga_excel'] = df_perizia['riga_excel'].astype(int)
-        df_perizia['operazione'] = df_perizia['operazione'].astype(str)
-        df_perizia['po'] = df_perizia['po'].astype(str)
-        df_perizia['descrizione_misura'] = df_perizia['descrizione_misura'].astype(str)
-        df_perizia['vdt'] = df_perizia['vdt'].astype(str)
-        df_perizia['descrizione_vdt'] = df_perizia['descrizione_vdt'].astype(str)
-        df_perizia['quantità'] = df_perizia['quantità'].astype(float)
-        df_perizia['tipo_vdt'] = df_perizia['tipo_vdt'].astype(str)
-        df_perizia['prezzo_nv'] = df_perizia['prezzo_nv'].astype(float)
-        df_perizia['um_nv'] = df_perizia['um_nv'].astype(str)
-        df_perizia['inserita'] = df_perizia['inserita'].astype(str)
-        df_perizia['sovrapprezzo1'] = df_perizia['sovrapprezzo1'].astype(str)
-        df_perizia['sovrapprezzo2'] = df_perizia['sovrapprezzo2'].astype(str)
         df_perizia.dropna(subset=['quantità'], inplace=True)
         df_perizia = df_perizia[df_perizia['quantità'] != 0]
         df_perizia.insert(1, 'n_riga', df_perizia.reset_index().index + inizia_da_riga)
-        df_perizia['n_riga'] = df_perizia['n_riga'].astype(int)
         df_perizia.set_index(['id_perizia', 'n_riga'], inplace=True)
         
         salva_perizia(df_perizia)
