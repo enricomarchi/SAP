@@ -9,11 +9,10 @@ from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import InvalidSelectorException
 import pandas as pd
 import time
-import openpyxl
 import xlwings as xw
-from sqlalchemy import create_engine, text, SmallInteger, Float, DateTime, VARCHAR, Column
-from sqlalchemy.ext.declarative import declarative_base
 import pymysql
+import pyrfc
+from sapgui import auto
 
 TIMEOUT = 240 
 hostname = 'localhost'
@@ -775,3 +774,27 @@ class WebSAP:
             self.click('//span[text()="[SALVA]"]/../..')  # Salva
         time.sleep(1)
         self.click('//span[text()="[TORNA ALLA VPR]"]/../..')  # Torna alla VPR
+
+def test_sap():
+    # Connessione a SAP
+    conn = pyrfc.Connection(
+        user='932197',
+        passwd='.Gioia7777',
+        ashost='in00.rfi.it',
+        sysnr='02',
+        client='111',
+        lang='IT'  # Lingua
+    )
+
+    # Ottenere l'oggetto SAP GUI
+    sapgui_auto = auto.find_sapgui()
+    app = sapgui_auto.GetScriptingEngine
+
+    # Ottenere la connessione e la sessione
+    connection = app.Children(0)
+    session = connection.Children(0)
+
+    # Ora puoi interagire con la sessione, ad esempio:
+    session.findById("wnd[0]").maximize()
+    session.findById("wnd[0]/tbar[0]/okcd").text = "/nZGEST_FND"
+    session.findById("wnd[0]").sendVKey(0)  # Invia il tasto 'Enter'
