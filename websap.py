@@ -12,7 +12,7 @@ import time
 import xlwings as xw
 import pymysql
 import pyrfc
-from sapgui import auto
+import sapgui
 
 TIMEOUT = 240 
 hostname = 'localhost'
