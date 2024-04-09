@@ -798,3 +798,27 @@ def test_sap():
     session.findById("wnd[0]").maximize()
     session.findById("wnd[0]/tbar[0]/okcd").text = "/nZGEST_FND"
     session.findById("wnd[0]").sendVKey(0)  # Invia il tasto 'Enter'
+    
+def test_sap_2():
+    # Parametri di connessione a SAP
+    conn_params = {
+        'user': 'USERNAME',
+        'passwd': 'PASSWORD',
+        'ashost': 'SAP_SERVER_ADDRESS',
+        'sysnr': 'SAP_SYSTEM_NUMBER',
+        'client': 'SAP_CLIENT_NUMBER',
+        'lang': 'EN'  # Lingua
+    }
+
+    # Connessione a SAP
+    conn = pyrfc.Connection(**conn_params)
+
+    # # Eseguire una chiamata RFC per leggere i dati da una tabella SAP
+    # table_name = 'YOUR_TABLE_NAME'
+    # result = conn.call('RFC_READ_TABLE', QUERY_TABLE=table_name, DELIMITER='|', ROWCOUNT=10)
+
+    # # Visualizza i risultati
+    # if 'DATA' in result:
+    #     data = result['DATA']
+    #     for row in data:
+    #         print(row)
