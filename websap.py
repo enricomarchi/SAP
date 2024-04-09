@@ -12,7 +12,7 @@ import time
 import xlwings as xw
 import pymysql
 import pyrfc
-from sapgui import auto
+import sapgui
 
 TIMEOUT = 240 
 hostname = 'localhost'
@@ -802,16 +802,23 @@ def test_sap():
 def test_sap_2():
     # Parametri di connessione a SAP
     conn_params = {
-        'user': 'USERNAME',
-        'passwd': 'PASSWORD',
-        'ashost': 'SAP_SERVER_ADDRESS',
-        'sysnr': 'SAP_SYSTEM_NUMBER',
-        'client': 'SAP_CLIENT_NUMBER',
-        'lang': 'EN'  # Lingua
+        'user': '932197',
+        'passwd': '.Gioia7777',
+        'ashost': 'ine00.rfi.it',
+        'sysnr': '02',
+        'client': '111',
+        'lang': 'IT'  # Lingua
     }
 
     # Connessione a SAP
-    conn = pyrfc.Connection(**conn_params)
+    conn = pyrfc.Connection(
+        user='932197',
+        passwd='.Gioia7777',
+        ashost='ine00.rfi.it',
+        sysnr='02',
+        client='111',
+        lang='IT'  # Lingua
+    )
 
     # # Eseguire una chiamata RFC per leggere i dati da una tabella SAP
     # table_name = 'YOUR_TABLE_NAME'
