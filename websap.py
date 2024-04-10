@@ -11,8 +11,6 @@ import pandas as pd
 import time
 import xlwings as xw
 import pymysql
-import pyrfc
-import sapgui
 
 TIMEOUT = 240 
 hostname = 'localhost'
@@ -52,8 +50,8 @@ class mapping_perizie:
                  col_prezzo_unitario:str, 
                  col_um:str, 
                  col_descrizione_misura:str, 
-                 operazione=None, 
-                 parte_opera=None):
+                 operazione:str='', 
+                 parte_opera:str=''):
         self.nome_foglio = nome_foglio
         self.riga_inizio = riga_inizio
         self.riga_fine = riga_fine
@@ -66,6 +64,36 @@ class mapping_perizie:
         self.col_descrizione_misura = col_descrizione_misura
         self.parte_opera = parte_opera
         self.operazione = operazione
+
+class mapping_sal:
+    def __init__(self,
+                 nome_foglio: str, 
+                 riga_inizio:int, 
+                 riga_fine:int,
+                 col_po: str,
+                 col_vdt:str, 
+                 col_descrizione_vdt: str,
+                 col_um:str, 
+                 col_prezzo_unitario:str, 
+                 col_ribasso:str, 
+                 col_quantità:str, 
+                 col_descrizione_misura:str,
+                 posizione:str = '',
+                 parte_opera:str = ''
+                 ):
+        self.nome_foglio = nome_foglio
+        self.riga_inizio = riga_inizio
+        self.riga_fine = riga_fine
+        self.col_po = col_po
+        self.col_vdt = col_vdt
+        self.col_descrizione_vdt = col_descrizione_vdt
+        self.col_um = col_um
+        self.col_prezzo_unitario = col_prezzo_unitario
+        self.col_ribasso = col_ribasso
+        self.col_quantità = col_quantità
+        self.col_descrizione_misura = col_descrizione_misura
+        self.posizione = posizione
+        self.parte_opera = parte_opera
 
 class Ex_VDT_non_trovata(Exception):
     def __init__(self, vdt, messaggio):
@@ -92,21 +120,25 @@ def colonna_da_nome(ws, nome):
 def connessione_mysql():
     return pymysql.connect(host=hostname, user=username, password=password, db=database_name)
 
-def engine_sqlalchemy():
-    engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
-    return engine
-
 def elimina_sal(id_sal):
     execute_query("DELETE FROM sal_misure WHERE id_sal = %s", args=(id_sal,)) 
 
 def salva_sal(df):
-    engine = engine_sqlalchemy()
-    df.columns = df.columns.str.lower() 
-    df.to_sql('sal_misure', con=engine, if_exists='append', index=True)
-    engine.dispose()      
+    for index, row in df.iterrows():
+        # Aggiunta degli indici alla lista dei valori
+        values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+        
+        # Aggiunta degli indici alla lista dei nomi delle colonne
+        columns_with_indices = ['id_sal', 'n_riga'] + df.columns.tolist()
+        
+        # Creazione della query di inserimento con i parametri
+        sql = f"INSERT INTO sal_misure ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+        
+        # Esecuzione della query utilizzando la funzione execute_query
+        execute_query(sql, tuple(values_with_indices))
 
 def elimina_perizia(id_perizia):
-    execute_query(f"DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
+    execute_query("DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
 
 def salva_perizia(df):
     for index, row in df.iterrows():
@@ -176,25 +208,93 @@ def execute_query(sql, args):
     finally:
         conn.close()    
 
-def importa_sal_da_excel(file_excel, append=True):
-    df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-    id_sal = df['id_sal'].iloc[0]
-    if append:
-        temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM sal_misure WHERE id_sal=%s GROUP BY id_sal", args=(id_sal,))
-        inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
-    else:
-        elimina_sal(id_sal)
-        inizia_da_riga = 1
-    df.insert(1, 'n_riga', df.reset_index().index + inizia_da_riga)
-    df['data_misura'] = pd.to_datetime(df['data_misura'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-    df.set_index(['id_sal', 'n_riga'], inplace=True)
-    salva_sal(df)
-
-def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *mapping: mapping_perizie, append: bool = True):
+def importa_sal_da_excel(file_excel: str, id_sal: str, data_misure:str, edizione_tariffa:str, edizione_tariffa_adeguamento:str, *mapping: mapping_sal, append: bool = True):
     try:
         app = xw.App(add_book=False, visible=False)
         wb = app.books.open(file_excel)
-        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantità', 'tipo_vdt', 'prezzo_nv', 'um_nv', 'inserita', 'sovrapprezzo1', 'sovrapprezzo2', 'foglio_excel', 'riga_excel'])
+        df_sal = pd.DataFrame(columns=['id_sal', 'posizione', 'po', 'descrizione', 'vdt', 'quantità', 'prezzo_nv', 'um_nv', 'rib', 'data_misura', 'edizione_tariffa', 'edizione_tariffa_adeguamento', 'foglio_excel', 'riga_excel', 'descrizione_vdt'])
+
+        for mappa in mapping:
+            print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
+            ws = wb.sheets[mappa.nome_foglio]
+            for riga in range(mappa.riga_inizio, mappa.riga_fine+1):
+                print(f'\rRiga {riga} di {mappa.riga_fine}', end='', flush=True)
+                vdt = ws.range(f'{mappa.col_vdt}{riga}').value if mappa.col_vdt else None
+                descrizione_vdt = ws.range(f'{mappa.col_descrizione_vdt}{riga}').value if mappa.col_descrizione_vdt else None
+                quantità = ws.range(f'{mappa.col_quantità}{riga}').value if mappa.col_quantità else None
+                prezzo_unitario = ws.range(f'{mappa.col_prezzo_unitario}{riga}').value if mappa.col_prezzo_unitario else None
+                um = ws.range(f'{mappa.col_um}{riga}').value if mappa.col_um else None
+                descrizione_misura = ws.range(f'{mappa.col_descrizione_misura}{riga}').value if mappa.col_descrizione_misura else None
+                rib = ws.range(f'{mappa.col_ribasso}{riga}').value if mappa.col_ribasso else None
+                if mappa.col_po:
+                    po = ws.range(f'{mappa.col_po}{riga}').value
+                elif mappa.parte_opera:
+                    po = mappa.parte_opera
+                else:
+                    po = 'Unica'
+                
+                posizione = mappa.posizione if mappa.posizione else '10'
+                
+                riga_df = pd.Series()
+                if (vdt or descrizione_vdt or quantità):
+                    riga_df['id_sal'] = id_sal
+                    riga_df['posizione'] = posizione
+                    riga_df['po'] = po
+                    if descrizione_misura: 
+                        riga_df['descrizione'] = descrizione_misura[:255]
+                    if vdt:
+                        riga_df['vdt'] = vdt
+                    elif descrizione_vdt:
+                        riga_df['vdt'] = descrizione_vdt[:40]
+                    elif descrizione_misura:
+                        riga_df['vdt'] = descrizione_misura[:40]
+                    if quantità:
+                        riga_df['quantità'] = quantità
+                    if prezzo_unitario:
+                        riga_df['prezzo_nv'] = prezzo_unitario
+                    if um:
+                        riga_df['um_nv'] = um
+                    if rib:
+                        riga_df['rib'] = rib.upper()
+                    if data_misure:
+                        riga_df['data_misura'] = data_misure
+                    if edizione_tariffa:
+                        riga_df['edizione_tariffa'] = edizione_tariffa
+                    if edizione_tariffa_adeguamento:
+                        riga_df['edizione_tariffa_adeguamento'] = edizione_tariffa_adeguamento
+                    riga_df['foglio_excel'] = mappa.nome_foglio
+                    riga_df['riga_excel'] = riga
+                    if descrizione_vdt:
+                        riga_df['descrizione_vdt'] = descrizione_vdt[:255]
+                        
+                    df_sal.loc[len(df_sal)] = riga_df
+                
+        if append:
+            temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM sal_misure WHERE id_sal=%s GROUP BY id_sal", args=(id_sal,))
+            inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
+        else:
+            elimina_sal(id_sal)
+            inizia_da_riga = 1
+
+        df_sal.dropna(subset=['quantità'], inplace=True)
+        df_sal = df_sal[df_sal['quantità'] != 0]
+        df_sal.insert(1, 'n_riga', df_sal.reset_index().index + inizia_da_riga)
+        df_sal.set_index(['id_sal', 'n_riga'], inplace=True)
+        
+        salva_sal(df_sal)
+        
+        return df_sal
+    except Exception as e:
+        print(str(e))
+    finally:
+        wb.close()
+        app.quit()
+
+def importa_perizia_da_excel(file_excel: str, id_perizia: str, *mapping: mapping_perizie, append: bool = True):
+    try:
+        app = xw.App(add_book=False, visible=False)
+        wb = app.books.open(file_excel)
+        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantità', 'prezzo_nv', 'um_nv', 'foglio_excel', 'riga_excel'])
 
         for mappa in mapping:
             print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
