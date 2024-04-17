@@ -208,11 +208,17 @@ def execute_query(sql, args):
     finally:
         conn.close()    
 
-def importa_sal_da_excel(file_excel: str, id_sal: str, data_misure:str, edizione_tariffa:str, edizione_tariffa_adeguamento:str, *mapping: mapping_sal, append: bool = True):
+def importa_sal_da_excel(id_sal: str, *mapping: mapping_sal, append: bool = True):
     try:
+        df_dati_sal = read_query('SELECT * FROM sal WHERE id_sal = %s', args=(id_sal,))
+        df_dati_sal = df_dati_sal.iloc[0]
+        data_misure = df_dati_sal['data_lavori_al']
+        edizione_tariffa = df_dati_sal['edizione_tariffa']
+        edizione_tariffa_adeguamento = df_dati_sal['edizione_tariffa_adeguamento']
+        file_excel = df_dati_sal['file_excel']
         app = xw.App(add_book=False, visible=False)
         wb = app.books.open(file_excel)
-        df_sal = pd.DataFrame(columns=['id_sal', 'posizione', 'po', 'descrizione', 'vdt', 'quantità', 'prezzo_nv', 'um_nv', 'rib', 'data_misura', 'edizione_tariffa', 'edizione_tariffa_adeguamento', 'foglio_excel', 'riga_excel', 'descrizione_vdt'])
+        df_sal = pd.DataFrame(columns=['id_sal', 'posizione', 'po', 'descrizione', 'vdt', 'quantita', 'prezzo_nv', 'um_nv', 'rib', 'data_misura', 'edizione_tariffa', 'edizione_tariffa_adeguamento', 'foglio_excel', 'riga_excel', 'descrizione_vdt'])
 
         for mappa in mapping:
             print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
@@ -249,7 +255,7 @@ def importa_sal_da_excel(file_excel: str, id_sal: str, data_misure:str, edizione
                     elif descrizione_misura:
                         riga_df['vdt'] = descrizione_misura[:40]
                     if quantità:
-                        riga_df['quantità'] = quantità
+                        riga_df['quantita'] = quantità
                     if prezzo_unitario:
                         riga_df['prezzo_nv'] = prezzo_unitario
                     if um:
@@ -276,8 +282,8 @@ def importa_sal_da_excel(file_excel: str, id_sal: str, data_misure:str, edizione
             elimina_sal(id_sal)
             inizia_da_riga = 1
 
-        df_sal.dropna(subset=['quantità'], inplace=True)
-        df_sal = df_sal[df_sal['quantità'] != 0]
+        df_sal.dropna(subset=['quantita'], inplace=True)
+        df_sal = df_sal[df_sal['quantita'] != 0]
         df_sal.insert(1, 'n_riga', df_sal.reset_index().index + inizia_da_riga)
         df_sal.set_index(['id_sal', 'n_riga'], inplace=True)
         
@@ -290,11 +296,15 @@ def importa_sal_da_excel(file_excel: str, id_sal: str, data_misure:str, edizione
         wb.close()
         app.quit()
 
-def importa_perizia_da_excel(file_excel: str, id_perizia: str, *mapping: mapping_perizie, append: bool = True):
+def importa_perizia_da_excel(id_perizia: str, *mapping: mapping_perizie, append: bool = True):
     try:
+        df_dati_perizia = read_query('SELECT * FROM perizie WHERE id_perizia = %s', args=(id_perizia,))
+        df_dati_perizia = df_dati_perizia.iloc[0]
+        file_excel = df_dati_perizia['file_excel']
+
         app = xw.App(add_book=False, visible=False)
         wb = app.books.open(file_excel)
-        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantità', 'prezzo_nv', 'um_nv', 'foglio_excel', 'riga_excel'])
+        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantita', 'prezzo_nv', 'um_nv', 'foglio_excel', 'riga_excel'])
 
         for mappa in mapping:
             print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
@@ -330,7 +340,7 @@ def importa_perizia_da_excel(file_excel: str, id_perizia: str, *mapping: mapping
                     if descrizione_vdt:
                         riga_df['descrizione_vdt'] = descrizione_vdt
                     if quantità:
-                        riga_df['quantità'] = quantità
+                        riga_df['quantita'] = quantità
                     if prezzo_unitario:
                         riga_df['prezzo_nv'] = prezzo_unitario
                     if um:
@@ -347,8 +357,8 @@ def importa_perizia_da_excel(file_excel: str, id_perizia: str, *mapping: mapping
             elimina_perizia(id_perizia)
             inizia_da_riga = 1
 
-        df_perizia.dropna(subset=['quantità'], inplace=True)
-        df_perizia = df_perizia[df_perizia['quantità'] != 0]
+        df_perizia.dropna(subset=['quantita'], inplace=True)
+        df_perizia = df_perizia[df_perizia['quantita'] != 0]
         df_perizia.insert(1, 'n_riga', df_perizia.reset_index().index + inizia_da_riga)
         df_perizia.set_index(['id_perizia', 'n_riga'], inplace=True)
         
@@ -534,7 +544,7 @@ class WebSAP:
             time.sleep(1)       
             self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
-            df = df.dropna(axis=0, subset=['quantità'])
+            df = df.dropna(axis=0, subset=['quantita'])
             df.vdt = df.vdt.str.upper()
             df.vdt = df.vdt.fillna("")
             df.nv = df.nv.fillna("")
@@ -761,7 +771,7 @@ class WebSAP:
         df.vdt = df.vdt.str.upper()
         df.vdt = df.vdt.fillna("")
         df.descrizione = df.descrizione.fillna("")
-        df = df[df["Quantità"] != 0]
+        df = df[df['quantita'] != 0]
         df.inserita = df.inserita.fillna("")
         df.Prezzo = df.Prezzo.fillna(0)
         operazioni = df.Operazione.unique()
