@@ -94,6 +94,40 @@ class mapping_sal:
         self.col_descrizione_misura = col_descrizione_misura
         self.posizione = posizione
         self.parte_opera = parte_opera
+        
+class mapping_vdt:
+    def __init__(self,
+                 nome_foglio: str, 
+                 riga_inizio:int, 
+                 riga_fine:int,
+                 col_s_vdt: str,
+                 col_edizione_tariffa:str, 
+                 col_tariffa: str,
+                 col_descrizione_estesa_per_voce:str, 
+                 col_descrizione:str,
+                 col_titolo,
+                 col_testo_esteso,
+                 col_stato,
+                 col_um,
+                 col_applicazione,
+                 col_prezzo_unitario,
+                 col_non_codificata
+                 ):
+        self.nome_foglio = nome_foglio
+        self.riga_inizio = riga_inizio
+        self.riga_fine = riga_fine
+        self.col_s_vdt = col_s_vdt
+        self.col_edizione_tariffa = col_edizione_tariffa
+        self.col_tariffa = col_tariffa
+        self.col_descrizione_estesa_per_voce = col_descrizione_estesa_per_voce
+        self.col_descrizione = col_descrizione
+        self.col_titolo = col_titolo
+        self.col_testo_esteso = col_testo_esteso
+        self.col_stato = col_stato
+        self.col_um = col_um
+        self.col_applicazione = col_applicazione
+        self.col_prezzo_unitario = col_prezzo_unitario
+        self.col_non_codificata = col_non_codificata
 
 class Ex_VDT_non_trovata(Exception):
     def __init__(self, vdt, messaggio):
@@ -137,6 +171,20 @@ def salva_sal(df):
         # Esecuzione della query utilizzando la funzione execute_query
         execute_query(sql, tuple(values_with_indices))
 
+def salva_vdt(df):
+    for index, row in df.iterrows():
+        # Aggiunta degli indici alla lista dei valori
+        values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+        
+        # Aggiunta degli indici alla lista dei nomi delle colonne
+        columns_with_indices = ['numero_s_vdt', 'edizione_tariffa'] + df.columns.tolist()
+        
+        # Creazione della query di inserimento con i parametri
+        sql = f"INSERT INTO tariffe ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+        
+        # Esecuzione della query utilizzando la funzione execute_query
+        execute_query(sql, tuple(values_with_indices))
+        
 def elimina_perizia(id_perizia):
     execute_query("DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
 
@@ -207,6 +255,80 @@ def execute_query(sql, args):
         conn.rollback()  
     finally:
         conn.close()    
+
+def importa_vdt_da_excel(file_excel: str, *mapping: mapping_vdt):
+    try:
+        app = xw.App(add_book=False, visible=False)
+        wb = app.books.open(file_excel)
+        df_vdt = pd.DataFrame(columns=[
+            'numero_s_vdt',
+            'edizione_tariffa',
+            'tariffa',
+            'gruppo',
+            'descrizione_estesa_per_gruppo',
+            'numero_vdt',
+            'descrizione_estesa_per_voce',
+            'descrizione',
+            'titolo',
+            'testo_esteso',
+            'stato',
+            'um',
+            'applicazione',
+            'cella_di_controllo',
+            'inserimento',
+            'eliminazioni',
+            'var_prezzo',
+            'perc_var',
+            'prezzo_unitario',
+            'perc_mo',
+            'non_codificata'
+        ])
+
+        for mappa in mapping:
+            print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
+            ws = wb.sheets[mappa.nome_foglio]
+            for riga in range(mappa.riga_inizio, mappa.riga_fine+1):
+                print(f'\rRiga {riga} di {mappa.riga_fine}', end='', flush=True)
+                numero_s_vdt = ws.range(f'{mappa.col_s_vdt}{riga}').value if mappa.col_s_vdt else None
+                edizione_tariffa = ws.range(f'{mappa.col_edizione_tariffa}{riga}').value if mappa.col_edizione_tariffa else None
+                tariffa = ws.range(f'{mappa.col_tariffa}{riga}').value if mappa.col_tariffa else None
+                descrizione_estesa_per_voce = ws.range(f'{mappa.col_descrizione_estesa_per_voce}{riga}').value if mappa.col_descrizione_estesa_per_voce else None
+                descrizione = ws.range(f'{mappa.col_descrizione}{riga}').value if mappa.col_descrizione else None
+                titolo = ws.range(f'{mappa.col_titolo}{riga}').value if mappa.col_titolo else None
+                testo_esteso = ws.range(f'{mappa.col_testo_esteso}{riga}').value if mappa.col_testo_esteso else None
+                stato = ws.range(f'{mappa.col_stato}{riga}').value if mappa.col_stato else None
+                um = ws.range(f'{mappa.col_um}{riga}').value if mappa.col_um else None
+                applicazione = ws.range(f'{mappa.col_applicazione}{riga}').value if mappa.col_applicazione else None
+                prezzo_unitario = ws.range(f'{mappa.col_prezzo_unitario}{riga}').value if mappa.col_prezzo_unitario else None
+                non_codificata = ws.range(f'{mappa.col_non_codificata}{riga}').value if mappa.col_non_codificata else None
+                
+                riga_df = pd.Series()
+                if (numero_s_vdt):
+                    riga_df['numero_s_vdt'] = numero_s_vdt
+                    riga_df['edizione_tariffa'] = edizione_tariffa
+                    riga_df['tariffa'] = tariffa
+                    riga_df['descrizione_estesa_per_voce'] = descrizione_estesa_per_voce
+                    riga_df['descrizione'] = descrizione
+                    riga_df['titolo'] = titolo
+                    riga_df['testo_esteso'] = testo_esteso
+                    riga_df['stato'] = stato
+                    riga_df['um'] = um
+                    riga_df['applicazione'] = applicazione
+                    riga_df['prezzo_unitario'] = prezzo_unitario
+                    riga_df['non_codificata'] = non_codificata
+                        
+                    df_vdt.loc[len(df_vdt)] = riga_df
+
+        df_vdt.set_index(['numero_s_vdt', 'edizione_tariffa'], inplace=True)
+        
+        salva_vdt(df_vdt)
+        
+        return df_vdt
+    except Exception as e:
+        print(str(e))
+    finally:
+        wb.close()
+        app.quit()    
 
 def importa_sal_da_excel(id_sal: str, *mapping: mapping_sal, append: bool = True):
     try:
