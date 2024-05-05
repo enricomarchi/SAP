@@ -15,7 +15,7 @@ import pymysql
 TIMEOUT = 240 
 hostname = 'localhost'
 username = 'root'
-password = '932197'
+password = '932197Silvestr_'
 database_name = 'enricoma_lavoro'
 
 def test(df):
@@ -184,6 +184,31 @@ def salva_vdt(df):
         
         # Esecuzione della query utilizzando la funzione execute_query
         execute_query(sql, tuple(values_with_indices))
+
+def inserimento_massivo_vdt(df):
+    conn = connessione_mysql()
+
+    try:
+        for index, row in df.iterrows():
+            # Aggiunta degli indici alla lista dei valori
+            values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+            
+            # Aggiunta degli indici alla lista dei nomi delle colonne
+            columns_with_indices = ['numero_s_vdt', 'edizione_tariffa'] + df.columns.tolist()
+            
+            # Creazione della query di inserimento con i parametri
+            sql = f"INSERT INTO tariffe ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+            
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(values_with_indices))    
+        conn.commit()
+    except Exception as e:  
+        print(f"Errore durante l'esecuzione della query: {e}")
+        print(columns_with_indices)
+        print(values_with_indices)
+        conn.rollback()  
+    finally:
+        conn.close()   
         
 def elimina_perizia(id_perizia):
     execute_query("DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
@@ -876,7 +901,8 @@ class WebSAP:
         
         return riga
             
-    def perizia(self, network: str, file_excel: str, nome_foglio: str):
+    def perizia(self, id_perizia: str, riepilogo_vdt=1):
+        network = id_perizia[:9]
         # Entra in Web Perizie
         time.sleep(1)
         self.click('//div[@title="Perizie"]')       # Tasto perizie
@@ -888,7 +914,7 @@ class WebSAP:
         self.attesa_caricamento()
         self.testo(network, '//span[text()="NUMERO DI NETWORK"]/../../../following-sibling::td//input')  # Network
 
-        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        
         df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
         df.vdt = df.vdt.str.upper()
         df.vdt = df.vdt.fillna("")
