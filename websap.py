@@ -11,13 +11,11 @@ import pandas as pd
 import time
 import xlwings as xw
 import pymysql
-import pyrfc
-import sapgui
 
 TIMEOUT = 240 
 hostname = 'localhost'
 username = 'root'
-password = '932197'
+password = '932197Silvestr_'
 database_name = 'enricoma_lavoro'
 
 def test(df):
@@ -52,8 +50,8 @@ class mapping_perizie:
                  col_prezzo_unitario:str, 
                  col_um:str, 
                  col_descrizione_misura:str, 
-                 operazione=None, 
-                 parte_opera=None):
+                 operazione:str='', 
+                 parte_opera:str=''):
         self.nome_foglio = nome_foglio
         self.riga_inizio = riga_inizio
         self.riga_fine = riga_fine
@@ -66,6 +64,70 @@ class mapping_perizie:
         self.col_descrizione_misura = col_descrizione_misura
         self.parte_opera = parte_opera
         self.operazione = operazione
+
+class mapping_sal:
+    def __init__(self,
+                 nome_foglio: str, 
+                 riga_inizio:int, 
+                 riga_fine:int,
+                 col_po: str,
+                 col_vdt:str, 
+                 col_descrizione_vdt: str,
+                 col_um:str, 
+                 col_prezzo_unitario:str, 
+                 col_ribasso:str, 
+                 col_quantità:str, 
+                 col_descrizione_misura:str,
+                 posizione:str = '',
+                 parte_opera:str = ''
+                 ):
+        self.nome_foglio = nome_foglio
+        self.riga_inizio = riga_inizio
+        self.riga_fine = riga_fine
+        self.col_po = col_po
+        self.col_vdt = col_vdt
+        self.col_descrizione_vdt = col_descrizione_vdt
+        self.col_um = col_um
+        self.col_prezzo_unitario = col_prezzo_unitario
+        self.col_ribasso = col_ribasso
+        self.col_quantità = col_quantità
+        self.col_descrizione_misura = col_descrizione_misura
+        self.posizione = posizione
+        self.parte_opera = parte_opera
+        
+class mapping_vdt:
+    def __init__(self,
+                 nome_foglio: str, 
+                 riga_inizio:int, 
+                 riga_fine:int,
+                 col_s_vdt: str,
+                 col_edizione_tariffa:str, 
+                 col_tariffa: str,
+                 col_descrizione_estesa_per_voce:str, 
+                 col_descrizione:str,
+                 col_titolo,
+                 col_testo_esteso,
+                 col_stato,
+                 col_um,
+                 col_applicazione,
+                 col_prezzo_unitario,
+                 col_non_codificata
+                 ):
+        self.nome_foglio = nome_foglio
+        self.riga_inizio = riga_inizio
+        self.riga_fine = riga_fine
+        self.col_s_vdt = col_s_vdt
+        self.col_edizione_tariffa = col_edizione_tariffa
+        self.col_tariffa = col_tariffa
+        self.col_descrizione_estesa_per_voce = col_descrizione_estesa_per_voce
+        self.col_descrizione = col_descrizione
+        self.col_titolo = col_titolo
+        self.col_testo_esteso = col_testo_esteso
+        self.col_stato = col_stato
+        self.col_um = col_um
+        self.col_applicazione = col_applicazione
+        self.col_prezzo_unitario = col_prezzo_unitario
+        self.col_non_codificata = col_non_codificata
 
 class Ex_VDT_non_trovata(Exception):
     def __init__(self, vdt, messaggio):
@@ -92,21 +154,64 @@ def colonna_da_nome(ws, nome):
 def connessione_mysql():
     return pymysql.connect(host=hostname, user=username, password=password, db=database_name)
 
-def engine_sqlalchemy():
-    engine = create_engine(f'mysql+mysqlconnector://{username}:{password}@{hostname}/{database_name}')
-    return engine
-
 def elimina_sal(id_sal):
     execute_query("DELETE FROM sal_misure WHERE id_sal = %s", args=(id_sal,)) 
 
 def salva_sal(df):
-    engine = engine_sqlalchemy()
-    df.columns = df.columns.str.lower() 
-    df.to_sql('sal_misure', con=engine, if_exists='append', index=True)
-    engine.dispose()      
+    for index, row in df.iterrows():
+        # Aggiunta degli indici alla lista dei valori
+        values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+        
+        # Aggiunta degli indici alla lista dei nomi delle colonne
+        columns_with_indices = ['id_sal', 'n_riga'] + df.columns.tolist()
+        
+        # Creazione della query di inserimento con i parametri
+        sql = f"INSERT INTO sal_misure ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+        
+        # Esecuzione della query utilizzando la funzione execute_query
+        execute_query(sql, tuple(values_with_indices))
 
+def salva_vdt(df):
+    for index, row in df.iterrows():
+        # Aggiunta degli indici alla lista dei valori
+        values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+        
+        # Aggiunta degli indici alla lista dei nomi delle colonne
+        columns_with_indices = ['numero_s_vdt', 'edizione_tariffa'] + df.columns.tolist()
+        
+        # Creazione della query di inserimento con i parametri
+        sql = f"INSERT INTO tariffe ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+        
+        # Esecuzione della query utilizzando la funzione execute_query
+        execute_query(sql, tuple(values_with_indices))
+
+def inserimento_massivo_vdt(df):
+    conn = connessione_mysql()
+
+    try:
+        for index, row in df.iterrows():
+            # Aggiunta degli indici alla lista dei valori
+            values_with_indices = [index[0], index[1]] + [None if (pd.isna(value)) else value for value in row]
+            
+            # Aggiunta degli indici alla lista dei nomi delle colonne
+            columns_with_indices = ['numero_s_vdt', 'edizione_tariffa'] + df.columns.tolist()
+            
+            # Creazione della query di inserimento con i parametri
+            sql = f"INSERT INTO tariffe ({', '.join(columns_with_indices)}) VALUES ({', '.join(['%s' for _ in range(len(values_with_indices))])})"
+            
+            with conn.cursor() as cursor:
+                cursor.execute(sql, tuple(values_with_indices))    
+        conn.commit()
+    except Exception as e:  
+        print(f"Errore durante l'esecuzione della query: {e}")
+        print(columns_with_indices)
+        print(values_with_indices)
+        conn.rollback()  
+    finally:
+        conn.close()   
+        
 def elimina_perizia(id_perizia):
-    execute_query(f"DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
+    execute_query("DELETE FROM perizie_misure WHERE id_perizia = %s", args=(id_perizia,)) 
 
 def salva_perizia(df):
     for index, row in df.iterrows():
@@ -176,25 +281,177 @@ def execute_query(sql, args):
     finally:
         conn.close()    
 
-def importa_sal_da_excel(file_excel, append=True):
-    df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
-    id_sal = df['id_sal'].iloc[0]
-    if append:
-        temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM sal_misure WHERE id_sal=%s GROUP BY id_sal", args=(id_sal,))
-        inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
-    else:
-        elimina_sal(id_sal)
-        inizia_da_riga = 1
-    df.insert(1, 'n_riga', df.reset_index().index + inizia_da_riga)
-    df['data_misura'] = pd.to_datetime(df['data_misura'], format='%d.%m.%Y').dt.strftime('%Y-%m-%d')
-    df.set_index(['id_sal', 'n_riga'], inplace=True)
-    salva_sal(df)
-
-def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *mapping: mapping_perizie, append: bool = True):
+def importa_vdt_da_excel(file_excel: str, *mapping: mapping_vdt):
     try:
         app = xw.App(add_book=False, visible=False)
         wb = app.books.open(file_excel)
-        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantità', 'tipo_vdt', 'prezzo_nv', 'um_nv', 'inserita', 'sovrapprezzo1', 'sovrapprezzo2', 'foglio_excel', 'riga_excel'])
+        df_vdt = pd.DataFrame(columns=[
+            'numero_s_vdt',
+            'edizione_tariffa',
+            'tariffa',
+            'gruppo',
+            'descrizione_estesa_per_gruppo',
+            'numero_vdt',
+            'descrizione_estesa_per_voce',
+            'descrizione',
+            'titolo',
+            'testo_esteso',
+            'stato',
+            'um',
+            'applicazione',
+            'cella_di_controllo',
+            'inserimento',
+            'eliminazioni',
+            'var_prezzo',
+            'perc_var',
+            'prezzo_unitario',
+            'perc_mo',
+            'non_codificata'
+        ])
+
+        for mappa in mapping:
+            print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
+            ws = wb.sheets[mappa.nome_foglio]
+            for riga in range(mappa.riga_inizio, mappa.riga_fine+1):
+                print(f'\rRiga {riga} di {mappa.riga_fine}', end='', flush=True)
+                numero_s_vdt = ws.range(f'{mappa.col_s_vdt}{riga}').value if mappa.col_s_vdt else None
+                edizione_tariffa = ws.range(f'{mappa.col_edizione_tariffa}{riga}').value if mappa.col_edizione_tariffa else None
+                tariffa = ws.range(f'{mappa.col_tariffa}{riga}').value if mappa.col_tariffa else None
+                descrizione_estesa_per_voce = ws.range(f'{mappa.col_descrizione_estesa_per_voce}{riga}').value if mappa.col_descrizione_estesa_per_voce else None
+                descrizione = ws.range(f'{mappa.col_descrizione}{riga}').value if mappa.col_descrizione else None
+                titolo = ws.range(f'{mappa.col_titolo}{riga}').value if mappa.col_titolo else None
+                testo_esteso = ws.range(f'{mappa.col_testo_esteso}{riga}').value if mappa.col_testo_esteso else None
+                stato = ws.range(f'{mappa.col_stato}{riga}').value if mappa.col_stato else None
+                um = ws.range(f'{mappa.col_um}{riga}').value if mappa.col_um else None
+                applicazione = ws.range(f'{mappa.col_applicazione}{riga}').value if mappa.col_applicazione else None
+                prezzo_unitario = ws.range(f'{mappa.col_prezzo_unitario}{riga}').value if mappa.col_prezzo_unitario else None
+                non_codificata = ws.range(f'{mappa.col_non_codificata}{riga}').value if mappa.col_non_codificata else None
+                
+                riga_df = pd.Series()
+                if (numero_s_vdt):
+                    riga_df['numero_s_vdt'] = numero_s_vdt
+                    riga_df['edizione_tariffa'] = edizione_tariffa
+                    riga_df['tariffa'] = tariffa
+                    riga_df['descrizione_estesa_per_voce'] = descrizione_estesa_per_voce
+                    riga_df['descrizione'] = descrizione
+                    riga_df['titolo'] = titolo
+                    riga_df['testo_esteso'] = testo_esteso
+                    riga_df['stato'] = stato
+                    riga_df['um'] = um
+                    riga_df['applicazione'] = applicazione
+                    riga_df['prezzo_unitario'] = prezzo_unitario
+                    riga_df['non_codificata'] = non_codificata
+                        
+                    df_vdt.loc[len(df_vdt)] = riga_df
+
+        df_vdt.set_index(['numero_s_vdt', 'edizione_tariffa'], inplace=True)
+        
+        salva_vdt(df_vdt)
+        
+        return df_vdt
+    except Exception as e:
+        print(str(e))
+    finally:
+        wb.close()
+        app.quit()    
+
+def importa_sal_da_excel(id_sal: str, *mapping: mapping_sal, append: bool = True):
+    try:
+        df_dati_sal = read_query('SELECT * FROM sal WHERE id_sal = %s', args=(id_sal,))
+        df_dati_sal = df_dati_sal.iloc[0]
+        data_misure = df_dati_sal['data_lavori_al']
+        edizione_tariffa = df_dati_sal['edizione_tariffa']
+        edizione_tariffa_adeguamento = df_dati_sal['edizione_tariffa_adeguamento']
+        file_excel = df_dati_sal['file_excel']
+        app = xw.App(add_book=False, visible=False)
+        wb = app.books.open(file_excel)
+        df_sal = pd.DataFrame(columns=['id_sal', 'posizione', 'po', 'descrizione', 'vdt', 'quantita', 'prezzo_nv', 'um_nv', 'rib', 'data_misura', 'edizione_tariffa', 'edizione_tariffa_adeguamento', 'foglio_excel', 'riga_excel', 'descrizione_vdt'])
+
+        for mappa in mapping:
+            print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
+            ws = wb.sheets[mappa.nome_foglio]
+            for riga in range(mappa.riga_inizio, mappa.riga_fine+1):
+                print(f'\rRiga {riga} di {mappa.riga_fine}', end='', flush=True)
+                vdt = ws.range(f'{mappa.col_vdt}{riga}').value if mappa.col_vdt else None
+                descrizione_vdt = ws.range(f'{mappa.col_descrizione_vdt}{riga}').value if mappa.col_descrizione_vdt else None
+                quantità = ws.range(f'{mappa.col_quantità}{riga}').value if mappa.col_quantità else None
+                prezzo_unitario = ws.range(f'{mappa.col_prezzo_unitario}{riga}').value if mappa.col_prezzo_unitario else None
+                um = ws.range(f'{mappa.col_um}{riga}').value if mappa.col_um else None
+                descrizione_misura = ws.range(f'{mappa.col_descrizione_misura}{riga}').value if mappa.col_descrizione_misura else None
+                rib = ws.range(f'{mappa.col_ribasso}{riga}').value if mappa.col_ribasso else None
+                if mappa.col_po:
+                    po = ws.range(f'{mappa.col_po}{riga}').value
+                elif mappa.parte_opera:
+                    po = mappa.parte_opera
+                else:
+                    po = 'Unica'
+                
+                posizione = mappa.posizione if mappa.posizione else '10'
+                
+                riga_df = pd.Series()
+                if (vdt or descrizione_vdt or quantità):
+                    riga_df['id_sal'] = id_sal
+                    riga_df['posizione'] = posizione
+                    riga_df['po'] = po
+                    if descrizione_misura: 
+                        riga_df['descrizione'] = descrizione_misura[:255]
+                    if vdt:
+                        riga_df['vdt'] = vdt
+                    elif descrizione_vdt:
+                        riga_df['vdt'] = descrizione_vdt[:40]
+                    elif descrizione_misura:
+                        riga_df['vdt'] = descrizione_misura[:40]
+                    if quantità:
+                        riga_df['quantita'] = quantità
+                    if prezzo_unitario:
+                        riga_df['prezzo_nv'] = prezzo_unitario
+                    if um:
+                        riga_df['um_nv'] = um
+                    if rib:
+                        riga_df['rib'] = rib.upper()
+                    if data_misure:
+                        riga_df['data_misura'] = data_misure
+                    if edizione_tariffa:
+                        riga_df['edizione_tariffa'] = edizione_tariffa
+                    if edizione_tariffa_adeguamento:
+                        riga_df['edizione_tariffa_adeguamento'] = edizione_tariffa_adeguamento
+                    riga_df['foglio_excel'] = mappa.nome_foglio
+                    riga_df['riga_excel'] = riga
+                    if descrizione_vdt:
+                        riga_df['descrizione_vdt'] = descrizione_vdt[:255]
+                        
+                    df_sal.loc[len(df_sal)] = riga_df
+                
+        if append:
+            temp_df = read_query("SELECT MAX(n_riga) AS max_riga FROM sal_misure WHERE id_sal=%s GROUP BY id_sal", args=(id_sal,))
+            inizia_da_riga = temp_df['max_riga'].iloc[0] + 1
+        else:
+            elimina_sal(id_sal)
+            inizia_da_riga = 1
+
+        df_sal.dropna(subset=['quantita'], inplace=True)
+        df_sal = df_sal[df_sal['quantita'] != 0]
+        df_sal.insert(1, 'n_riga', df_sal.reset_index().index + inizia_da_riga)
+        df_sal.set_index(['id_sal', 'n_riga'], inplace=True)
+        
+        salva_sal(df_sal)
+        
+        return df_sal
+    except Exception as e:
+        print(str(e))
+    finally:
+        wb.close()
+        app.quit()
+
+def importa_perizia_da_excel(id_perizia: str, *mapping: mapping_perizie, append: bool = True):
+    try:
+        df_dati_perizia = read_query('SELECT * FROM perizie WHERE id_perizia = %s', args=(id_perizia,))
+        df_dati_perizia = df_dati_perizia.iloc[0]
+        file_excel = df_dati_perizia['file_excel']
+
+        app = xw.App(add_book=False, visible=False)
+        wb = app.books.open(file_excel)
+        df_perizia = pd.DataFrame(columns=['id_perizia', 'operazione', 'po', 'descrizione_misura', 'vdt', 'descrizione_vdt', 'quantita', 'prezzo_nv', 'um_nv', 'foglio_excel', 'riga_excel'])
 
         for mappa in mapping:
             print(f'\n{mappa.nome_foglio}', end='\n', flush=True)
@@ -230,7 +487,7 @@ def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *map
                     if descrizione_vdt:
                         riga_df['descrizione_vdt'] = descrizione_vdt
                     if quantità:
-                        riga_df['quantità'] = quantità
+                        riga_df['quantita'] = quantità
                     if prezzo_unitario:
                         riga_df['prezzo_nv'] = prezzo_unitario
                     if um:
@@ -247,8 +504,8 @@ def importa_perizia_da_excel(file_excel: str, id_perizia: str, network:str, *map
             elimina_perizia(id_perizia)
             inizia_da_riga = 1
 
-        df_perizia.dropna(subset=['quantità'], inplace=True)
-        df_perizia = df_perizia[df_perizia['quantità'] != 0]
+        df_perizia.dropna(subset=['quantita'], inplace=True)
+        df_perizia = df_perizia[df_perizia['quantita'] != 0]
         df_perizia.insert(1, 'n_riga', df_perizia.reset_index().index + inizia_da_riga)
         df_perizia.set_index(['id_perizia', 'n_riga'], inplace=True)
         
@@ -434,7 +691,7 @@ class WebSAP:
             time.sleep(1)       
             self.testo(oda, '//span[text()="NUMERO ORDINE DI ACQUISTO NOTO"]/../../../following-sibling::td//input')  # ODA
 
-            df = df.dropna(axis=0, subset=['quantità'])
+            df = df.dropna(axis=0, subset=['quantita'])
             df.vdt = df.vdt.str.upper()
             df.vdt = df.vdt.fillna("")
             df.nv = df.nv.fillna("")
@@ -644,7 +901,8 @@ class WebSAP:
         
         return riga
             
-    def perizia(self, network: str, file_excel: str, nome_foglio: str):
+    def perizia(self, id_perizia: str, riepilogo_vdt=1):
+        network = id_perizia[:9]
         # Entra in Web Perizie
         time.sleep(1)
         self.click('//div[@title="Perizie"]')       # Tasto perizie
@@ -656,12 +914,12 @@ class WebSAP:
         self.attesa_caricamento()
         self.testo(network, '//span[text()="NUMERO DI NETWORK"]/../../../following-sibling::td//input')  # Network
 
-        df = pd.read_excel(io=file_excel, sheet_name="VDT", header=0)
+        
         df = df[(df["Inserita"] == "") | (pd.isna(df["Inserita"]))]
         df.vdt = df.vdt.str.upper()
         df.vdt = df.vdt.fillna("")
         df.descrizione = df.descrizione.fillna("")
-        df = df[df["Quantità"] != 0]
+        df = df[df['quantita'] != 0]
         df.inserita = df.inserita.fillna("")
         df.Prezzo = df.Prezzo.fillna(0)
         operazioni = df.Operazione.unique()
